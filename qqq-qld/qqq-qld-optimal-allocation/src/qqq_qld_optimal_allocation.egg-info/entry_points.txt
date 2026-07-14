@@ -1,0 +1,2 @@
+[console_scripts]
+qqq-qld = qqq_qld.cli:main
