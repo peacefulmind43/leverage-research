@@ -1,8 +1,0 @@
-matplotlib>=3.8
-numpy>=1.26
-pandas>=2.1
-PyYAML>=6.0
-requests>=2.31
-scipy>=1.11
-tabulate>=0.9
-yfinance>=0.2.54
