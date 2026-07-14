@@ -11,4 +11,4 @@ near 60%. There is no universally optimal allocation; the appropriate mix depend
 investor's objective and risk tolerance.
 
 This repository is provided for reference only. A detailed backtest of my favorite allocation is
-available in [`backtests/qqq70_qld30`](backtests/qqq70_qld30). This is not financial advice.
+available in [`backtests/qqq70_qld30`](backtests/qqq70_qld30). Not Financial Advice.
