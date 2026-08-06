@@ -11,7 +11,7 @@ Maximizing in-sample CAGR drives the allocation to 100% QLD, while maximizing Sh
 
 ## The optimal allocation depends on the objective
 
-| Objective | QQQ | QLD | Effective daily exposure | CAGR | Volatility | Maximum drawdown | Sharpe |
+| Objective | QQQ | QLD | Target exposure (1+w)† | CAGR | Volatility | Maximum drawdown | Sharpe |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Maximum in-sample CAGR | 0% | 100% | 2.00x | 25.4% | 44.0% | -83.1% | 0.74 |
 | Maximum in-sample Sharpe | 100% | 0% | 1.00x | 16.7% | 22.1% | -53.4% | 0.81 |
@@ -19,12 +19,37 @@ Maximizing in-sample CAGR drives the allocation to 100% QLD, while maximizing Sh
 | Closest to 25% volatility | 86% | 14% | 1.14x | 18.1% | 25.0% | -58.8% | 0.79 |
 | Maximum CAGR with drawdown no worse than -60% | 84% | 16% | 1.16x | 18.3% | 25.5% | -59.6% | 0.79 |
 
+† Target exposure equals realized daily exposure only under daily rebalancing; see the Growth-optimal leverage section below for the actual gap at this report's ME rebalancing cadence.
+
 ## Out-of-sample performance and stability
 
 The expanding-window walk-forward strategy produced an out-of-sample CAGR of **19.1%**, a Sharpe ratio of **0.95**, and a maximum drawdown of **-35.1%**.
 For each test year, the highest-Sharpe weight is selected using only information that was previously available, making this result more realistic than a full-sample optimum.
 
 Across the moving-block bootstrap samples, the median highest-Sharpe QLD weight is **0%**, with a 5th–95th percentile range of **0%–0%**. A wider interval indicates that the exact optimal percentage is less stable.
+
+## Growth-optimal leverage (Kelly estimate)
+
+Using this sample's annualized QQQ excess return (**17.9%**) and variance (implying **22.1%** volatility), the growth-optimal (full-Kelly) leverage on the Nasdaq-100 is **3.66x**, with a half-Kelly reference of **1.83x**. QLD is fixed at 2.00x. Clipped to the QQQ/QLD blend's achievable 1x–2x range, full-Kelly implies **100%** QLD.
+This is a point estimate from `mu / sigma^2`, ignores financing spread and fund fees, and is highly sensitive to the sample period — treat it as a rough compass heading, not a target to hit precisely. See `docs/methodology.md` section 6.
+
+### A blend is not the same as a fixed-leverage position
+
+**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position.** QLD's daily return is approximately 2x QQQ's, so a blend rebalanced *every day* would have daily return `(1-w)*r + w*2r = (1+w)*r` — exactly a synthetic `(1+w)`x daily-reset product. This report's blend rebalances ME, so between rebalances the two legs compound independently and realized exposure drifts away from `1+w`. The table below quantifies the resulting gap at this report's actual rebalancing cadence, comparing each weight's real backtested blend to the idealized, frictionless synthetic exposure it targets:
+
+| Weight | Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |
+|---|---:|---:|---:|---:|---:|
+| Half-Kelly | 1.83x | 27.8% | 24.3% | -3.5% | 0.997 |
+| Max-Sharpe (grid) | 1.00x | 16.7% | 16.7% | 0.0% | 1.000 |
+
+Holding the weight fixed at the max-Sharpe allocation above, rebalancing cadence alone changes the outcome as follows:
+
+| rebalance   |   target_leverage |   synthetic_cagr |   actual_cagr |   cagr_gap |   synthetic_volatility |   actual_volatility |   return_correlation |
+|:------------|------------------:|-----------------:|--------------:|-----------:|-----------------------:|--------------------:|---------------------:|
+| D           |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
+| W           |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
+| ME          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
+| QE          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
 
 ## Interpretation limits
 
