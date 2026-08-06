@@ -98,6 +98,41 @@ grid search in `results/summary.md`. Because \(\mu\) is estimated with much more
 read as a directional check on whether 2x over- or undershoots the data's implied growth-optimal
 exposure — not as a precise target.
 
+### 6.1 A blend is not the same as a fixed-leverage position
+
+`qqq_qld.optimize.kelly_implied_qld_weight` clips \(L^*-1\) into the achievable \([0,1]\) QLD
+weight range so it can be read as a QQQ/QLD allocation. This mapping is only exact under one
+specific condition: **daily rebalancing**. QLD's daily return is approximately \(2r_t\), where
+\(r_t\) is QQQ's daily return. A blend with QLD weight \(w\), rebalanced to target every day,
+therefore has daily return
+
+\[
+(1-w)\,r_t + w\,(2r_t) = (1+w)\,r_t,
+\]
+
+which is algebraically identical to a synthetic \((1+w)\)x daily-reset leveraged product. It is
+*not* identical under less frequent rebalancing (this repository's default is monthly, `ME`):
+between rebalance dates the QQQ and QLD legs compound independently, so the blend's realized
+exposure drifts away from \(1+w\) rather than tracking it exactly — a smaller-scale version of
+the same volatility-drag mechanism that makes QLD itself diverge from "2x QQQ" over multi-day
+holding periods.
+
+`qqq_qld.leverage` makes this concrete instead of leaving it as an assumption:
+
+- `simulate_daily_reset_leverage` builds the idealized, frictionless synthetic \(L\)x product
+  directly from actual discretized daily returns (rather than only the continuous-time \(g_L\)
+  approximation above), so it captures real discretized volatility drag and serves as ground
+  truth for a given \(L\).
+- `rebalance_drag` backtests the real QQQ/QLD blend at a given weight and rebalancing frequency
+  (via `qqq_qld.backtest.portfolio_returns`) against that synthetic benchmark, reporting the CAGR
+  gap and return correlation between the two.
+- `compare_rebalance_frequencies` holds the target weight fixed and varies only the rebalancing
+  cadence, showing empirically how much cadence alone changes the outcome on this dataset.
+
+`results/summary.md`'s Kelly section reports these comparisons at this repository's actual
+configured rebalancing frequency, so the gap between "target exposure" and "realized exposure"
+is shown rather than assumed away.
+
 ## 7. Known limitations
 
 - Survivorship/selection bias: QQQ and QLD are chosen after their success is known.

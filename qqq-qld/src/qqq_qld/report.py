@@ -95,6 +95,9 @@ def write_summary(
     walk_returns: pd.Series,
     bootstrap: pd.Series,
     kelly: dict[str, float],
+    kelly_weight: float,
+    drag_rows: dict[str, dict[str, float | str]],
+    frequency_table: pd.DataFrame,
     config: dict,
 ) -> None:
     oos = performance_metrics(walk_returns, config["optimization"]["annual_risk_free_rate"])
@@ -118,7 +121,7 @@ def write_summary(
         "",
         "## The optimal allocation depends on the objective",
         "",
-        "| Objective | QQQ | QLD | Effective daily exposure | CAGR | Volatility | "
+        "| Objective | QQQ | QLD | Target exposure (1+w)† | CAGR | Volatility | "
         "Maximum drawdown | Sharpe |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
@@ -144,6 +147,12 @@ def write_summary(
             f"{_pct(row['cagr'])} | {_pct(row['volatility'])} | "
             f"{_pct(row['max_drawdown'])} | {row['sharpe']:.2f} |"
         )
+    lines += [
+        "",
+        "† Target exposure equals realized daily exposure only under daily rebalancing; see "
+        "the Growth-optimal leverage section below for the actual gap at this report's "
+        f"{config['portfolio']['rebalance']} rebalancing cadence.",
+    ]
     q_low, q_med, q_high = bootstrap.quantile([0.05, 0.5, 0.95])
     lines += [
         "",
@@ -166,10 +175,39 @@ def write_summary(
         f"variance (implying **{_pct(kelly['sigma2'] ** 0.5)}** volatility), the "
         f"growth-optimal (full-Kelly) leverage on the Nasdaq-100 is "
         f"**{kelly['full_kelly']:.2f}x**, with a half-Kelly reference of "
-        f"**{kelly['half_kelly']:.2f}x**. QLD is fixed at 2.00x.",
+        f"**{kelly['half_kelly']:.2f}x**. QLD is fixed at 2.00x. Clipped to the QQQ/QLD blend's "
+        f"achievable 1x–2x range, full-Kelly implies **{kelly_weight:.0%}** QLD.",
         "This is a point estimate from `mu / sigma^2`, ignores financing spread and fund fees, "
         "and is highly sensitive to the sample period — treat it as a rough compass heading, "
         "not a target to hit precisely. See `docs/methodology.md` section 6.",
+        "",
+        "### A blend is not the same as a fixed-leverage position",
+        "",
+        "**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position.** QLD's "
+        "daily return is approximately 2x QQQ's, so a blend rebalanced *every day* would have "
+        "daily return `(1-w)*r + w*2r = (1+w)*r` — exactly a synthetic `(1+w)`x daily-reset "
+        f"product. This report's blend rebalances {config['portfolio']['rebalance']}, so "
+        "between rebalances the two legs compound independently and realized exposure drifts "
+        "away from `1+w`. The table below quantifies the resulting gap at this report's actual "
+        "rebalancing cadence, comparing each weight's real backtested blend to the idealized, "
+        "frictionless synthetic exposure it targets:",
+        "",
+        "| Weight | Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | "
+        "Return correlation |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for label, drag in drag_rows.items():
+        lines.append(
+            f"| {label} | {drag['target_leverage']:.2f}x | {_pct(drag['synthetic_cagr'])} | "
+            f"{_pct(drag['actual_cagr'])} | {_pct(drag['cagr_gap'])} | "
+            f"{drag['return_correlation']:.3f} |"
+        )
+    lines += [
+        "",
+        "Holding the weight fixed at the max-Sharpe allocation above, rebalancing cadence alone "
+        "changes the outcome as follows:",
+        "",
+        frequency_table.to_markdown(floatfmt=".4f"),
         "",
         "## Interpretation limits",
         "",

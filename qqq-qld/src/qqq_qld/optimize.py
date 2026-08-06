@@ -79,6 +79,21 @@ def kelly_optimal_leverage(
     }
 
 
+def kelly_implied_qld_weight(
+    kelly: dict[str, float],
+    min_weight: float = 0.0,
+    max_weight: float = 1.0,
+) -> float:
+    """Map a Kelly leverage estimate onto the achievable QQQ/QLD weight range.
+
+    A QQQ/QLD blend can only reach exposures in ``[1 + min_weight, 1 + max_weight]``,
+    so this clips ``full_kelly - 1`` into that range. This mapping is exact only
+    under daily rebalancing of the blend; see :func:`qqq_qld.leverage.rebalance_drag`
+    for the empirical gap at other rebalancing frequencies.
+    """
+    return float(np.clip(kelly["full_kelly"] - 1.0, min_weight, max_weight))
+
+
 def walk_forward(
     returns: pd.DataFrame,
     min_train_years: int = 5,

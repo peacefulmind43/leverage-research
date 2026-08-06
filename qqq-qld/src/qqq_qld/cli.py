@@ -8,8 +8,10 @@ from pathlib import Path
 import yaml
 
 from .data import download_prices, prices_to_returns
+from .leverage import compare_rebalance_frequencies, rebalance_drag
 from .optimize import (
     evaluate_grid,
+    kelly_implied_qld_weight,
     kelly_optimal_leverage,
     select_optima,
     stationary_block_bootstrap_weights,
@@ -74,6 +76,19 @@ def run(
     kelly = kelly_optimal_leverage(
         returns, asset="QQQ", annual_risk_free_rate=opt["annual_risk_free_rate"]
     )
+    kelly_weight = kelly_implied_qld_weight(kelly)
+    half_kelly_weight = kelly_implied_qld_weight({"full_kelly": kelly["half_kelly"]})
+    max_sharpe_weight = float(selected["max_sharpe"].name)
+    drag_rows = {
+        "Half-Kelly": rebalance_drag(returns, half_kelly_weight, **common),
+        "Max-Sharpe (grid)": rebalance_drag(returns, max_sharpe_weight, **common),
+    }
+    frequency_table = compare_rebalance_frequencies(
+        returns,
+        max_sharpe_weight,
+        transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
+        annual_risk_free_rate=opt["annual_risk_free_rate"],
+    )
 
     results_dir = root / report_cfg["results_dir"]
     assets_dir = root / report_cfg["assets_dir"]
@@ -99,6 +114,9 @@ def run(
         walk_returns,
         bootstrap,
         kelly,
+        kelly_weight,
+        drag_rows,
+        frequency_table,
         cfg,
     )
     print(f"Analysis complete: {results_dir / 'summary.md'}")

@@ -4,6 +4,7 @@ import pytest
 
 from qqq_qld.optimize import (
     evaluate_grid,
+    kelly_implied_qld_weight,
     kelly_optimal_leverage,
     select_optima,
     stationary_block_bootstrap_weights,
@@ -66,6 +67,15 @@ def test_kelly_optimal_leverage_rejects_missing_asset():
     returns = sample_returns()
     with pytest.raises(ValueError, match="not found"):
         kelly_optimal_leverage(returns, asset="SPY")
+
+
+@pytest.mark.parametrize(
+    ("full_kelly", "expected_weight"),
+    [(3.0, 1.0), (0.3, 0.0), (1.5, 0.5)],
+)
+def test_kelly_implied_qld_weight_clips_to_achievable_range(full_kelly, expected_weight):
+    weight = kelly_implied_qld_weight({"full_kelly": full_kelly})
+    assert np.isclose(weight, expected_weight)
 
 
 def test_walk_forward_uses_expanding_non_overlapping_windows():
