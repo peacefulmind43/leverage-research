@@ -13,6 +13,7 @@ from .optimize import (
     evaluate_grid,
     kelly_implied_qld_weight,
     kelly_optimal_leverage,
+    kelly_sensitivity,
     select_optima,
     stationary_block_bootstrap_weights,
     walk_forward,
@@ -89,6 +90,11 @@ def run(
         transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
         annual_risk_free_rate=opt["annual_risk_free_rate"],
     )
+    mu_scenarios = {
+        "Trailing sample (this backtest)": kelly["mu"],
+        **opt.get("mu_scenarios", {}),
+    }
+    sensitivity = kelly_sensitivity(kelly["sigma2"], mu_scenarios)
 
     results_dir = root / report_cfg["results_dir"]
     assets_dir = root / report_cfg["assets_dir"]
@@ -117,6 +123,7 @@ def run(
         kelly_weight,
         drag_rows,
         frequency_table,
+        sensitivity,
         cfg,
     )
     print(f"Analysis complete: {results_dir / 'summary.md'}")

@@ -51,6 +51,19 @@ Holding the weight fixed at the max-Sharpe allocation above, rebalancing cadence
 | ME          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
 | QE          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
 
+### Sensitivity to the assumed forward return (μ)
+
+Kelly leverage is linear in μ but only quadratically penalized by σ² -- and μ is far less reliable to estimate from trailing data than σ² is (see `docs/methodology.md` section 6.2). The table below holds this sample's σ² (**22.1%** volatility) fixed and recomputes the implied leverage/weight under alternative forward-looking μ assumptions, editable in `config/default.yaml` under `optimization.mu_scenarios`:
+
+| Scenario | Assumed μ | Full-Kelly leverage | Half-Kelly leverage | Full-Kelly QLD weight | Half-Kelly QLD weight |
+|---|---:|---:|---:|---:|---:|
+| Trailing sample (this backtest) | 17.9% | 3.66x | 1.83x | 100% | 83% |
+| Conservative (valuation-anchored ~10y CMA, e.g. Vanguard/Research Affiliates) | 6.0% | 1.23x | 0.62x | 23% | 0% |
+| Bear case (GMO-style multiple reversion) | -4.0% | -0.82x | -0.41x | 0% | 0% |
+| Bull case (AI upside exceeds current consensus) | 12.0% | 2.46x | 1.23x | 100% | 23% |
+
+This is not a forecast produced by this tool -- the non-trailing rows are assumptions you (or the config file) supplied. The point is the spread: a plausible range of forward μ assumptions maps to a very different recommended weight, from heavily levered to unlevered.
+
 ## Interpretation limits
 
 The practical appeal of QQQ plus QLD is that two liquid ETFs can continuously adjust target daily Nasdaq-100 exposure from approximately 1x to 2x.

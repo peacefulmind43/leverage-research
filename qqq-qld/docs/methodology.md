@@ -133,6 +133,42 @@ holding periods.
 configured rebalancing frequency, so the gap between "target exposure" and "realized exposure"
 is shown rather than assumed away.
 
+### 6.2 Why μ deserves the most scrutiny
+
+`kelly_optimal_leverage` estimates μ as this sample's trailing annualized QQQ excess
+arithmetic mean. That number describes the historical window; it is not a forecast, and
+it deserves far more skepticism than σ² does when read as an input to a forward-looking
+allocation decision. Three reasons:
+
+- **μ is linear in the Kelly formula; σ² is not.** `L* = μ / σ²` moves one-for-one with
+  μ but is only quadratically penalized by σ² in the underlying growth-rate
+  approximation. Over any realistic sample length, the standard error on an annualized
+  mean return is large relative to the mean itself, while realized variance is
+  comparatively stable and persistent (volatility clusters and mean-reverts; average
+  return does not). The least reliable input is the one the recommendation is most
+  sensitive to.
+- **A high current valuation is itself evidence that expected forward growth is
+  already priced in.** Realizing a widely anticipated growth story (e.g. AI-driven
+  earnings growth) does not by itself produce trailing-style excess returns once that
+  anticipation is already reflected in the multiple an investor pays today. Forward
+  return requires growth *beyond* what the current price already assumes, not merely
+  the growth that is currently expected.
+- **The dot-com precedent shows a real trend and a poor forward trade can coexist.**
+  The internet turned out to be as transformative as its most bullish believers
+  argued, yet many broad tech indices did not reclaim their 2000 valuations for over a
+  decade. Being correct about the underlying technology and being correct about the
+  price paid for it are different claims, and history has already run something close
+  to this experiment once.
+
+`qqq_qld.optimize.kelly_sensitivity` operationalizes this: it holds this sample's σ²
+fixed (the more trustworthy estimate) and recomputes the implied Kelly
+leverage/weight across a set of alternative, user-supplied forward μ assumptions,
+configured in `config/default.yaml` under `optimization.mu_scenarios`. `results/summary.md`
+reports this alongside the trailing-sample figure so the reader sees the spread of
+plausible outcomes rather than one point estimate presented as if it were reliable.
+This does not replace judgment about what μ to assume -- it makes the consequence of
+that judgment explicit and adjustable.
+
 ## 7. Known limitations
 
 - Survivorship/selection bias: QQQ and QLD are chosen after their success is known.

@@ -6,6 +6,7 @@ from qqq_qld.optimize import (
     evaluate_grid,
     kelly_implied_qld_weight,
     kelly_optimal_leverage,
+    kelly_sensitivity,
     select_optima,
     stationary_block_bootstrap_weights,
     walk_forward,
@@ -51,7 +52,13 @@ def _kelly_extras(returns, selected, kelly, opt, portfolio):
         transaction_cost_bps=portfolio["transaction_cost_bps"],
         annual_risk_free_rate=opt["annual_risk_free_rate"],
     )
-    return kelly_weight, drag_rows, frequency_table
+    mu_scenarios = {
+        "Trailing sample (this backtest)": kelly["mu"],
+        "Conservative": 0.06,
+        "Bear case": -0.04,
+    }
+    sensitivity = kelly_sensitivity(kelly["sigma2"], mu_scenarios)
+    return kelly_weight, drag_rows, frequency_table, sensitivity
 
 
 def test_write_summary_produces_expected_sections(tmp_path):
@@ -79,7 +86,7 @@ def test_write_summary_produces_expected_sections(tmp_path):
     )
     bootstrap = stationary_block_bootstrap_weights(returns, samples=5, step=0.5, seed=1)
     kelly = kelly_optimal_leverage(returns, annual_risk_free_rate=opt["annual_risk_free_rate"])
-    kelly_weight, drag_rows, frequency_table = _kelly_extras(
+    kelly_weight, drag_rows, frequency_table, sensitivity = _kelly_extras(
         returns, selected, kelly, opt, portfolio
     )
 
@@ -96,6 +103,7 @@ def test_write_summary_produces_expected_sections(tmp_path):
         kelly_weight,
         drag_rows,
         frequency_table,
+        sensitivity,
         config,
     )
 
@@ -109,6 +117,9 @@ def test_write_summary_produces_expected_sections(tmp_path):
     assert "not the same as a static 1.3x-leveraged QQQ position" in text
     assert "Half-Kelly" in text
     assert "Max-Sharpe (grid)" in text
+    assert "### Sensitivity to the assumed forward return" in text
+    assert "Trailing sample (this backtest)" in text
+    assert "Conservative" in text
     assert "## Walk-forward annual selections" in text
     # A feasible max_cagr row should not degrade to the N/A placeholder row.
     assert "| Maximum in-sample CAGR | N/A |" not in text
@@ -140,7 +151,7 @@ def test_write_summary_handles_infeasible_drawdown_constraint(tmp_path):
     )
     bootstrap = stationary_block_bootstrap_weights(returns, samples=5, step=0.5, seed=1)
     kelly = kelly_optimal_leverage(returns, annual_risk_free_rate=opt["annual_risk_free_rate"])
-    kelly_weight, drag_rows, frequency_table = _kelly_extras(
+    kelly_weight, drag_rows, frequency_table, sensitivity = _kelly_extras(
         returns, selected, kelly, opt, portfolio
     )
 
@@ -157,6 +168,7 @@ def test_write_summary_handles_infeasible_drawdown_constraint(tmp_path):
         kelly_weight,
         drag_rows,
         frequency_table,
+        sensitivity,
         config,
     )
 

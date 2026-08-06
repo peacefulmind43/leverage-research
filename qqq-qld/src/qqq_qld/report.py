@@ -98,6 +98,7 @@ def write_summary(
     kelly_weight: float,
     drag_rows: dict[str, dict[str, float | str]],
     frequency_table: pd.DataFrame,
+    sensitivity: pd.DataFrame,
     config: dict,
 ) -> None:
     oos = performance_metrics(walk_returns, config["optimization"]["annual_risk_free_rate"])
@@ -208,6 +209,32 @@ def write_summary(
         "changes the outcome as follows:",
         "",
         frequency_table.to_markdown(floatfmt=".4f"),
+        "",
+        "### Sensitivity to the assumed forward return (μ)",
+        "",
+        "Kelly leverage is linear in μ but only quadratically penalized by σ² "
+        "-- and μ is far less reliable to estimate from trailing data than σ² is "
+        "(see `docs/methodology.md` section 6.2). The table below holds this sample's "
+        f"σ² (**{_pct(kelly['sigma2'] ** 0.5)}** volatility) fixed and recomputes the "
+        "implied leverage/weight under alternative forward-looking μ assumptions, editable "
+        "in `config/default.yaml` under `optimization.mu_scenarios`:",
+        "",
+        "| Scenario | Assumed μ | Full-Kelly leverage | Half-Kelly leverage | "
+        "Full-Kelly QLD weight | Half-Kelly QLD weight |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for scenario, row in sensitivity.iterrows():
+        lines.append(
+            f"| {scenario} | {_pct(row['assumed_mu'])} | {row['full_kelly_leverage']:.2f}x | "
+            f"{row['half_kelly_leverage']:.2f}x | {row['full_kelly_qld_weight']:.0%} | "
+            f"{row['half_kelly_qld_weight']:.0%} |"
+        )
+    lines += [
+        "",
+        "This is not a forecast produced by this tool -- the non-trailing rows are assumptions "
+        "you (or the config file) supplied. The point is the spread: a plausible range of "
+        "forward μ assumptions maps to a very different recommended weight, from heavily "
+        "levered to unlevered.",
         "",
         "## Interpretation limits",
         "",

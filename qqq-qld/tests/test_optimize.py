@@ -6,6 +6,7 @@ from qqq_qld.optimize import (
     evaluate_grid,
     kelly_implied_qld_weight,
     kelly_optimal_leverage,
+    kelly_sensitivity,
     select_optima,
     stationary_block_bootstrap_weights,
     walk_forward,
@@ -76,6 +77,30 @@ def test_kelly_optimal_leverage_rejects_missing_asset():
 def test_kelly_implied_qld_weight_clips_to_achievable_range(full_kelly, expected_weight):
     weight = kelly_implied_qld_weight({"full_kelly": full_kelly})
     assert np.isclose(weight, expected_weight)
+
+
+def test_kelly_sensitivity_computes_expected_rows_and_clipping():
+    sigma2 = 0.05
+    mu_scenarios = {"Bear": -0.05, "Base": 0.06, "Trailing": 0.30}
+
+    table = kelly_sensitivity(sigma2, mu_scenarios)
+
+    assert list(table.index) == ["Bear", "Base", "Trailing"]
+    for scenario, mu in mu_scenarios.items():
+        row = table.loc[scenario]
+        expected_full = mu / sigma2
+        assert np.isclose(row["assumed_mu"], mu)
+        assert np.isclose(row["full_kelly_leverage"], expected_full)
+        assert np.isclose(row["half_kelly_leverage"], expected_full / 2.0)
+        assert np.isclose(
+            row["full_kelly_qld_weight"], np.clip(expected_full - 1.0, 0.0, 1.0)
+        )
+        assert np.isclose(
+            row["half_kelly_qld_weight"], np.clip(expected_full / 2.0 - 1.0, 0.0, 1.0)
+        )
+    # Bear case (negative mu) clips to 0% QLD on both leverage definitions.
+    assert table.loc["Bear", "full_kelly_qld_weight"] == 0.0
+    assert table.loc["Bear", "half_kelly_qld_weight"] == 0.0
 
 
 def test_walk_forward_uses_expanding_non_overlapping_windows():

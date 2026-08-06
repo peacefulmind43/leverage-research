@@ -94,6 +94,40 @@ def kelly_implied_qld_weight(
     return float(np.clip(kelly["full_kelly"] - 1.0, min_weight, max_weight))
 
 
+def kelly_sensitivity(
+    sigma2: float,
+    mu_scenarios: dict[str, float],
+    min_weight: float = 0.0,
+    max_weight: float = 1.0,
+) -> pd.DataFrame:
+    """Recompute Kelly-implied leverage/weight across assumed forward mu values.
+
+    sigma2 is held fixed across scenarios because it is far better estimated than mu
+    over any realistic sample length (see docs/methodology.md section 6.2), while mu
+    varies per scenario. This shows how sensitive the Kelly recommendation is to a
+    parameter that cannot be reliably forecast from trailing sample returns alone.
+    """
+    rows: list[dict[str, float | str]] = []
+    for label, mu in mu_scenarios.items():
+        full = mu / sigma2 if sigma2 else float("nan")
+        half = full / 2.0
+        rows.append(
+            {
+                "scenario": label,
+                "assumed_mu": mu,
+                "full_kelly_leverage": full,
+                "half_kelly_leverage": half,
+                "full_kelly_qld_weight": kelly_implied_qld_weight(
+                    {"full_kelly": full}, min_weight, max_weight
+                ),
+                "half_kelly_qld_weight": kelly_implied_qld_weight(
+                    {"full_kelly": half}, min_weight, max_weight
+                ),
+            }
+        )
+    return pd.DataFrame(rows).set_index("scenario")
+
+
 def walk_forward(
     returns: pd.DataFrame,
     min_train_years: int = 5,
