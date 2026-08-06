@@ -88,6 +88,16 @@ leverage. Therefore an interior growth-optimal exposure can exist. Its location 
 volatility, financing cost, valuation, or market regime changes. Historical Nasdaq performance was
 exceptionally strong and should not be treated as a known future mean.
 
+`qqq_qld.optimize.kelly_optimal_leverage` estimates the full-Kelly leverage implied by this
+approximation as \(L^*=\mu/\sigma^2\), using the sample's annualized QQQ excess arithmetic mean
+and variance, ignoring the financing and fee terms above. It also reports the conventional
+half-Kelly haircut (\(L^*/2\)), which is the standard practitioner response to estimation error in
+\(\mu\) and \(\sigma^2\) rather than a distinct model. Both figures are reported alongside the
+grid search in `results/summary.md`. Because \(\mu\) is estimated with much more noise than
+\(\sigma^2\), and the admissible QQQ/QLD blend only spans 1x-2x exposure, this estimate should be
+read as a directional check on whether 2x over- or undershoots the data's implied growth-optimal
+exposure — not as a precise target.
+
 ## 7. Known limitations
 
 - Survivorship/selection bias: QQQ and QLD are chosen after their success is known.

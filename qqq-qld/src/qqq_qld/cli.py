@@ -8,11 +8,22 @@ from pathlib import Path
 import yaml
 
 from .data import download_prices, prices_to_returns
-from .optimize import evaluate_grid, select_optima, stationary_block_bootstrap_weights, walk_forward
+from .optimize import (
+    evaluate_grid,
+    kelly_optimal_leverage,
+    select_optima,
+    stationary_block_bootstrap_weights,
+    walk_forward,
+)
 from .report import save_figures, write_summary
 
 
-def run(config_path: str, refresh: bool = False, fast: bool = False) -> None:
+def run(
+    config_path: str,
+    refresh: bool = False,
+    fast: bool = False,
+    samples: int | None = None,
+) -> None:
     root = Path(config_path).resolve().parent.parent
     with open(config_path, encoding="utf-8") as handle:
         cfg = yaml.safe_load(handle)
@@ -45,15 +56,23 @@ def run(config_path: str, refresh: bool = False, fast: bool = False) -> None:
         step=opt["grid_step"],
         **common,
     )
-    samples = min(100, opt["bootstrap_samples"]) if fast else opt["bootstrap_samples"]
+    if samples is not None:
+        sample_count = samples
+    elif fast:
+        sample_count = min(100, opt["bootstrap_samples"])
+    else:
+        sample_count = opt["bootstrap_samples"]
     bootstrap = stationary_block_bootstrap_weights(
         returns,
-        samples=samples,
+        samples=sample_count,
         block_days=opt["bootstrap_block_days"],
         objective="sharpe",
         step=opt["grid_step"],
         seed=opt["seed"],
         **common,
+    )
+    kelly = kelly_optimal_leverage(
+        returns, asset="QQQ", annual_risk_free_rate=opt["annual_risk_free_rate"]
     )
 
     results_dir = root / report_cfg["results_dir"]
@@ -79,6 +98,7 @@ def run(config_path: str, refresh: bool = False, fast: bool = False) -> None:
         walk_table,
         walk_returns,
         bootstrap,
+        kelly,
         cfg,
     )
     print(f"Analysis complete: {results_dir / 'summary.md'}")
@@ -88,9 +108,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Research QQQ + QLD allocation weights")
     parser.add_argument("--config", default="config/default.yaml")
     parser.add_argument("--refresh", action="store_true", help="redownload market data")
-    parser.add_argument("--fast", action="store_true", help="use 100 bootstrap samples")
+    parser.add_argument("--fast", action="store_true", help="shorthand for --samples 100")
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=None,
+        help="override the configured bootstrap sample count",
+    )
     args = parser.parse_args()
-    run(args.config, refresh=args.refresh, fast=args.fast)
+    run(args.config, refresh=args.refresh, fast=args.fast, samples=args.samples)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import portfolio_returns
-from .metrics import performance_metrics
+from .metrics import TRADING_DAYS, performance_metrics
 
 
 def evaluate_grid(
@@ -47,6 +47,36 @@ def select_optima(
         feasible.loc[feasible["cagr"].idxmax()] if not feasible.empty else pd.Series(dtype=float)
     )
     return selections
+
+
+def kelly_optimal_leverage(
+    returns: pd.DataFrame,
+    asset: str = "QQQ",
+    annual_risk_free_rate: float = 0.0,
+) -> dict[str, float]:
+    """Estimate growth-optimal (Kelly) leverage on a single unleveraged asset.
+
+    Uses the continuous-time approximation g_L ~= L*mu - 0.5*L^2*sigma^2 (see
+    docs/methodology.md section 6), maximized at L* = mu / sigma^2, where mu is the
+    asset's annualized excess arithmetic mean return and sigma^2 its annualized return
+    variance. ``half_kelly`` is the standard practitioner haircut against estimation
+    error in mu/sigma^2, not a separate model. This ignores financing spread and fund
+    fees and is a point estimate specific to the sample period, not a forecast.
+    """
+    if asset not in returns.columns:
+        raise ValueError(f"{asset!r} not found in returns columns")
+    daily = returns[asset].dropna()
+    if daily.empty:
+        raise ValueError("returns cannot be empty")
+    mu = float(daily.mean() * TRADING_DAYS) - annual_risk_free_rate
+    sigma2 = float(daily.var(ddof=1) * TRADING_DAYS)
+    full_kelly = mu / sigma2 if sigma2 else float("nan")
+    return {
+        "mu": mu,
+        "sigma2": sigma2,
+        "full_kelly": full_kelly,
+        "half_kelly": full_kelly / 2.0,
+    }
 
 
 def walk_forward(

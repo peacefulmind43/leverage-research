@@ -94,6 +94,7 @@ def write_summary(
     walk_table: pd.DataFrame,
     walk_returns: pd.Series,
     bootstrap: pd.Series,
+    kelly: dict[str, float],
     config: dict,
 ) -> None:
     oos = performance_metrics(walk_returns, config["optimization"]["annual_risk_free_rate"])
@@ -158,6 +159,17 @@ def write_summary(
         f"**{q_med:.0%}**, with a 5th–95th percentile range of "
         f"**{q_low:.0%}–{q_high:.0%}**. A wider interval indicates that the exact optimal "
         "percentage is less stable.",
+        "",
+        "## Growth-optimal leverage (Kelly estimate)",
+        "",
+        f"Using this sample's annualized QQQ excess return (**{_pct(kelly['mu'])}**) and "
+        f"variance (implying **{_pct(kelly['sigma2'] ** 0.5)}** volatility), the "
+        f"growth-optimal (full-Kelly) leverage on the Nasdaq-100 is "
+        f"**{kelly['full_kelly']:.2f}x**, with a half-Kelly reference of "
+        f"**{kelly['half_kelly']:.2f}x**. QLD is fixed at 2.00x.",
+        "This is a point estimate from `mu / sigma^2`, ignores financing spread and fund fees, "
+        "and is highly sensitive to the sample period — treat it as a rough compass heading, "
+        "not a target to hit precisely. See `docs/methodology.md` section 6.",
         "",
         "## Interpretation limits",
         "",

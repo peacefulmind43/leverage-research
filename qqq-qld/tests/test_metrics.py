@@ -16,3 +16,10 @@ def test_drawdown_path():
     result = drawdown(returns)
     assert np.isclose(result.iloc[1], -0.20)
     assert np.isclose(result.iloc[-1], 0.0)
+
+
+def test_no_downside_returns_yield_nan_sortino_and_calmar():
+    returns = pd.Series(np.repeat(0.001, 252))
+    metrics = performance_metrics(returns)
+    assert np.isnan(metrics["sortino"])
+    assert np.isnan(metrics["calmar"])
