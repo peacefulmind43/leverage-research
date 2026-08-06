@@ -1,0 +1,5 @@
+scenario,assumed_mu,full_kelly_leverage,half_kelly_leverage,full_kelly_qld_weight,half_kelly_qld_weight,this_backtest_qld_weight,gap_vs_half_kelly
+Trailing sample (this backtest),0.17861384985984474,3.6647675689360386,1.8323837844680193,1.0,0.8323837844680193,0.3,-0.5323837844680193
+"Conservative (valuation-anchored ~10y CMA, e.g. Vanguard/Research Affiliates)",0.06,1.231069451269894,0.615534725634947,0.2310694512698941,0.0,0.3,0.3
+Bear case (GMO-style multiple reversion),-0.04,-0.8207129675132628,-0.4103564837566314,0.0,0.0,0.3,0.3
+Bull case (AI upside exceeds current consensus),0.12,2.462138902539788,1.231069451269894,1.0,0.2310694512698941,0.3,0.0689305487301059

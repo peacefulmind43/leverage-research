@@ -16,13 +16,16 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from qqq_qld.backtest import portfolio_returns  # noqa: E402
 from qqq_qld.data import download_prices, prices_to_returns  # noqa: E402
+from qqq_qld.leverage import rebalance_drag  # noqa: E402
 from qqq_qld.metrics import drawdown, performance_metrics  # noqa: E402
+from qqq_qld.optimize import kelly_optimal_leverage, kelly_sensitivity  # noqa: E402
 
 STRATEGIES = {
     "70% QQQ / 30% QLD": 0.30,
     "100% QQQ": 0.00,
     "100% QLD": 1.00,
 }
+TARGET_WEIGHT_QLD = 0.30
 
 
 def _strategy_returns(returns: pd.DataFrame, rebalance: str, cost_bps: float) -> pd.DataFrame:
@@ -129,11 +132,35 @@ def _pct(value: float) -> str:
     return f"{value:.1%}"
 
 
+def _kelly_sensitivity_table(
+    returns: pd.DataFrame, optimization_cfg: dict, risk_free_rate: float
+) -> pd.DataFrame:
+    """Show how the Kelly-implied weight shifts under alternative forward-mu assumptions.
+
+    sigma2 is held fixed (better estimated than mu; see docs/methodology.md section
+    6.2). The trailing sample estimate is added automatically alongside whatever
+    scenarios are configured in config/default.yaml under optimization.mu_scenarios.
+    """
+    kelly = kelly_optimal_leverage(returns, asset="QQQ", annual_risk_free_rate=risk_free_rate)
+    mu_scenarios = {
+        "Trailing sample (this backtest)": kelly["mu"],
+        **optimization_cfg.get("mu_scenarios", {}),
+    }
+    sensitivity = kelly_sensitivity(kelly["sigma2"], mu_scenarios)
+    sensitivity["this_backtest_qld_weight"] = TARGET_WEIGHT_QLD
+    sensitivity["gap_vs_half_kelly"] = (
+        TARGET_WEIGHT_QLD - sensitivity["half_kelly_qld_weight"]
+    )
+    return sensitivity
+
+
 def _write_readme(
     strategy_returns: pd.DataFrame,
     summary: pd.DataFrame,
     annual: pd.DataFrame,
     episodes: pd.DataFrame,
+    drag: dict[str, float | str],
+    sensitivity: pd.DataFrame,
     rebalance: str,
     cost_bps: float,
     initial_value: float,
@@ -161,6 +188,34 @@ def _write_readme(
     display_episodes = episodes.copy()
     if not display_episodes.empty:
         display_episodes["max_drawdown"] = display_episodes["max_drawdown"].map(_pct)
+
+    display_sensitivity = sensitivity.copy()
+    display_sensitivity["assumed_mu"] = display_sensitivity["assumed_mu"].map(_pct)
+    display_sensitivity["full_kelly_leverage"] = display_sensitivity["full_kelly_leverage"].map(
+        lambda x: f"{x:.2f}x"
+    )
+    display_sensitivity["half_kelly_leverage"] = display_sensitivity["half_kelly_leverage"].map(
+        lambda x: f"{x:.2f}x"
+    )
+    display_sensitivity["full_kelly_qld_weight"] = display_sensitivity[
+        "full_kelly_qld_weight"
+    ].map(lambda x: f"{x:.0%}")
+    display_sensitivity["half_kelly_qld_weight"] = display_sensitivity[
+        "half_kelly_qld_weight"
+    ].map(lambda x: f"{x:.0%}")
+    display_sensitivity["gap_vs_half_kelly"] = display_sensitivity["gap_vs_half_kelly"].map(
+        lambda x: f"{x * 100:+.0f}pp"
+    )
+    display_sensitivity = display_sensitivity.drop(columns=["this_backtest_qld_weight"]).rename(
+        columns={
+            "assumed_mu": "Assumed μ",
+            "full_kelly_leverage": "Full-Kelly leverage",
+            "half_kelly_leverage": "Half-Kelly leverage",
+            "full_kelly_qld_weight": "Full-Kelly QLD weight",
+            "half_kelly_qld_weight": "Half-Kelly QLD weight",
+            "gap_vs_half_kelly": "30% QLD vs. half-Kelly",
+        }
+    )
 
     lines = [
         "# 70% QQQ / 30% QLD Backtest",
@@ -204,6 +259,39 @@ def _write_readme(
             else "No drawdowns found."
         ),
         "",
+        "## This is not a fixed 1.30x position",
+        "",
+        "70% QQQ + 30% QLD targets **1.30x** exposure, but that identity only holds exactly "
+        "under **daily** rebalancing. This backtest rebalances `ME` (month-end), so between "
+        "rebalances the two legs compound independently and realized exposure drifts away from "
+        "1.30x -- the table below compares this real, cost-inclusive blend to the idealized, "
+        "frictionless synthetic 1.30x daily-reset product it targets (see `qqq_qld.leverage` and "
+        "`docs/methodology.md` section 6.1):",
+        "",
+        f"| Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |\n"
+        f"|---:|---:|---:|---:|---:|\n"
+        f"| {drag['target_leverage']:.2f}x | {_pct(drag['synthetic_cagr'])} | "
+        f"{_pct(drag['actual_cagr'])} | {_pct(drag['cagr_gap'])} | "
+        f"{drag['return_correlation']:.3f} |",
+        "",
+        "## Forward-looking caveat: is 30% QLD still justified?",
+        "",
+        "The full-period result above (**19.7% CAGR**) describes this specific historical "
+        "window; it is not a forecast. Kelly-optimal leverage (`L* = mu / sigma^2`) is linear in "
+        "the assumed forward return `mu` but only quadratically penalized by variance -- and "
+        "`mu` is far less reliable to estimate from trailing data than variance is. The table "
+        "below holds this sample's volatility fixed and recomputes the Kelly-implied leverage "
+        "and QLD weight under alternative forward-`mu` assumptions (editable in "
+        "`config/default.yaml` under `optimization.mu_scenarios`; see `docs/methodology.md` "
+        "section 6.2 and the main [`results/summary.md`](../../results/summary.md)):",
+        "",
+        display_sensitivity.to_markdown(),
+        "",
+        "Under the trailing sample's own historical return, Kelly leverage would justify more "
+        "than this backtest's 30% QLD weight; under the more conservative, valuation-anchored "
+        "forward-return assumption it does not. Treat 30% QLD as one point on that spectrum, "
+        "not as a conclusion this backtest can supply on its own.",
+        "",
         "## Charts",
         "",
         "![Equity curve](assets/equity_curve.png)",
@@ -226,6 +314,8 @@ def _write_readme(
         "- `results/calendar_year_returns.csv`",
         "- `results/monthly_returns.csv`",
         "- `results/largest_drawdowns.csv`",
+        "- `results/rebalance_drag.csv`",
+        "- `results/kelly_sensitivity.csv`",
         "- `assets/equity_curve.png`",
         "- `assets/drawdowns.png`",
         "- `assets/calendar_year_returns.png`",
@@ -265,6 +355,14 @@ def main() -> None:
     annual = _period_returns(strategy_returns, "Y")
     monthly = _period_returns(strategy_returns[["70% QQQ / 30% QLD"]], "M")
     episodes = _drawdown_episodes(strategy_returns["70% QQQ / 30% QLD"])
+    drag = rebalance_drag(
+        returns,
+        TARGET_WEIGHT_QLD,
+        rebalance=portfolio_cfg["rebalance"],
+        transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
+        annual_risk_free_rate=risk_free_rate,
+    )
+    sensitivity = _kelly_sensitivity_table(returns, config["optimization"], risk_free_rate)
 
     results_dir = BACKTEST_DIR / "results"
     assets_dir = BACKTEST_DIR / "assets"
@@ -273,12 +371,16 @@ def main() -> None:
     annual.to_csv(results_dir / "calendar_year_returns.csv")
     monthly.to_csv(results_dir / "monthly_returns.csv")
     episodes.to_csv(results_dir / "largest_drawdowns.csv", index=False)
+    pd.DataFrame([drag]).to_csv(results_dir / "rebalance_drag.csv", index=False)
+    sensitivity.to_csv(results_dir / "kelly_sensitivity.csv")
     _save_figures(strategy_returns, assets_dir, portfolio_cfg["initial_value"])
     _write_readme(
         strategy_returns,
         summary,
         annual,
         episodes,
+        drag,
+        sensitivity,
         portfolio_cfg["rebalance"],
         portfolio_cfg["transaction_cost_bps"],
         portfolio_cfg["initial_value"],

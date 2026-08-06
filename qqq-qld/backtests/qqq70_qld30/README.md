@@ -41,6 +41,27 @@ The complete table is available in [`results/calendar_year_returns.csv`](results
 | 2024-07-10  | 2024-08-07    | 2024-11-07      | -17.5%         |                       20 |                   85 |
 | 2020-09-02  | 2020-09-23    | 2020-12-03      | -16.3%         |                       14 |                   64 |
 
+## This is not a fixed 1.30x position
+
+70% QQQ + 30% QLD targets **1.30x** exposure, but that identity only holds exactly under **daily** rebalancing. This backtest rebalances `ME` (month-end), so between rebalances the two legs compound independently and realized exposure drifts away from 1.30x -- the table below compares this real, cost-inclusive blend to the idealized, frictionless synthetic 1.30x daily-reset product it targets (see `qqq_qld.leverage` and `docs/methodology.md` section 6.1):
+
+| Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |
+|---:|---:|---:|---:|---:|
+| 1.30x | 21.0% | 19.7% | -1.3% | 0.999 |
+
+## Forward-looking caveat: is 30% QLD still justified?
+
+The full-period result above (**19.7% CAGR**) describes this specific historical window; it is not a forecast. Kelly-optimal leverage (`L* = mu / sigma^2`) is linear in the assumed forward return `mu` but only quadratically penalized by variance -- and `mu` is far less reliable to estimate from trailing data than variance is. The table below holds this sample's volatility fixed and recomputes the Kelly-implied leverage and QLD weight under alternative forward-`mu` assumptions (editable in `config/default.yaml` under `optimization.mu_scenarios`; see `docs/methodology.md` section 6.2 and the main [`results/summary.md`](../../results/summary.md)):
+
+| scenario                                                                      | Assumed μ   | Full-Kelly leverage   | Half-Kelly leverage   | Full-Kelly QLD weight   | Half-Kelly QLD weight   | 30% QLD vs. half-Kelly   |
+|:------------------------------------------------------------------------------|:------------|:----------------------|:----------------------|:------------------------|:------------------------|:-------------------------|
+| Trailing sample (this backtest)                                               | 17.9%       | 3.66x                 | 1.83x                 | 100%                    | 83%                     | -53pp                    |
+| Conservative (valuation-anchored ~10y CMA, e.g. Vanguard/Research Affiliates) | 6.0%        | 1.23x                 | 0.62x                 | 23%                     | 0%                      | +30pp                    |
+| Bear case (GMO-style multiple reversion)                                      | -4.0%       | -0.82x                | -0.41x                | 0%                      | 0%                      | +30pp                    |
+| Bull case (AI upside exceeds current consensus)                               | 12.0%       | 2.46x                 | 1.23x                 | 100%                    | 23%                     | +7pp                     |
+
+Under the trailing sample's own historical return, Kelly leverage would justify more than this backtest's 30% QLD weight; under the more conservative, valuation-anchored forward-return assumption it does not. Treat 30% QLD as one point on that spectrum, not as a conclusion this backtest can supply on its own.
+
 ## Charts
 
 ![Equity curve](assets/equity_curve.png)
@@ -63,6 +84,8 @@ Generated files:
 - `results/calendar_year_returns.csv`
 - `results/monthly_returns.csv`
 - `results/largest_drawdowns.csv`
+- `results/rebalance_drag.csv`
+- `results/kelly_sensitivity.csv`
 - `assets/equity_curve.png`
 - `assets/drawdowns.png`
 - `assets/calendar_year_returns.png`
