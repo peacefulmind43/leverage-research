@@ -43,11 +43,14 @@ The complete table is available in [`results/calendar_year_returns.csv`](results
 
 ## This is not a fixed 1.30x position
 
-70% QQQ + 30% QLD targets **1.30x** exposure, but that identity only holds exactly under **daily** rebalancing. This backtest rebalances `ME` (month-end), so between rebalances the two legs compound independently and realized exposure drifts away from 1.30x -- the table below compares this real, cost-inclusive blend to the idealized, frictionless synthetic 1.30x daily-reset product it targets (see `qqq_qld.leverage` and `docs/methodology.md` section 6.1):
+70% QQQ + 30% QLD targets **1.30x** exposure, but real QLD is not literally 2x QQQ -- it carries its own expense ratio and financing spread on the leveraged notional. So even under **daily** rebalancing, this blend shows a gap against a *frictionless* synthetic 1.30x daily-reset product; that gap does not close no matter how often the blend rebalances. This backtest's `ME` (month-end) cadence adds a second, separate, and much smaller effect on top: between rebalances the two legs compound independently and exposure drifts a little further from 1.30x. The table below shows both rows so the two effects don't get conflated (see `qqq_qld.leverage` and `docs/methodology.md` section 6.1):
 
-| Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |
-|---:|---:|---:|---:|---:|
-| 1.30x | 21.0% | 19.7% | -1.3% | 0.999 |
+| rebalance   | synthetic_cagr   | actual_cagr   | cagr_gap   |   return_correlation |
+|:------------|:-----------------|:--------------|:-----------|---------------------:|
+| D           | 21.0%            | 19.8%         | -1.2%      |                0.999 |
+| ME          | 21.0%            | 19.7%         | -1.3%      |                0.999 |
+
+Of the **-1.3%** total CAGR gap at this backtest's actual `ME` cadence, **-1.2%** is already present at daily rebalancing -- that's QLD's own real cost drag, not a rebalancing artifact. Only the remaining **-0.1%** is attributable to rebalancing monthly instead of daily.
 
 ## Forward-looking caveat: is 30% QLD still justified?
 

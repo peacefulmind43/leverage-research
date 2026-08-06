@@ -184,14 +184,18 @@ def write_summary(
         "",
         "### A blend is not the same as a fixed-leverage position",
         "",
-        "**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position.** QLD's "
-        "daily return is approximately 2x QQQ's, so a blend rebalanced *every day* would have "
-        "daily return `(1-w)*r + w*2r = (1+w)*r` — exactly a synthetic `(1+w)`x daily-reset "
-        f"product. This report's blend rebalances {config['portfolio']['rebalance']}, so "
-        "between rebalances the two legs compound independently and realized exposure drifts "
-        "away from `1+w`. The table below quantifies the resulting gap at this report's actual "
-        "rebalancing cadence, comparing each weight's real backtested blend to the idealized, "
-        "frictionless synthetic exposure it targets:",
+        "**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position, for two "
+        "separate reasons.** First, QLD's real daily return is only *approximately* 2x QQQ's — "
+        "it embeds QLD's own expense ratio and financing spread — so even a blend rebalanced "
+        "*every day* would show a gap against a *frictionless* synthetic `(1+w)`x daily-reset "
+        "product, proportional to the QLD weight, that does not close no matter how often the "
+        "blend rebalances. Second, and separately, "
+        f"this report's blend rebalances {config['portfolio']['rebalance']} rather than daily, "
+        "so between rebalances the two legs compound independently and realized exposure drifts "
+        "further away from `1+w`. The table below quantifies the combined gap at this report's "
+        "actual rebalancing cadence, comparing each weight's real backtested blend to the "
+        "idealized, frictionless synthetic exposure it targets — see the frequency table further "
+        "below to see the two effects separated (its `D` row isolates the first effect alone):",
         "",
         "| Weight | Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | "
         "Return correlation |",
@@ -205,8 +209,11 @@ def write_summary(
         )
     lines += [
         "",
-        "Holding the weight fixed at the max-Sharpe allocation above, rebalancing cadence alone "
-        "changes the outcome as follows:",
+        "Holding the weight fixed at the half-Kelly allocation above (chosen because it carries "
+        "a nonzero QLD weight, unlike this dataset's max-Sharpe allocation), rebalancing cadence "
+        "alone changes the outcome as follows. Compare each row to the `D` (daily) row, not to "
+        "zero: the gap remaining at `D` is QLD's own real cost drag, not a cadence effect, and "
+        "only the *additional* gap at slower cadences reflects rebalancing frequency itself:",
         "",
         frequency_table.to_markdown(floatfmt=".4f"),
         "",

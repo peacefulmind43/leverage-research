@@ -20,10 +20,13 @@ math and assumptions are documented in [`docs/methodology.md`](docs/methodology.
   year's weight using only prior data) and the moving-block bootstrap both independently select
   **0% QLD** as the highest-Sharpe allocation in almost every case — the in-sample case for QLD is
   considerably weaker once you stop using future information to choose past weights.
-- **A blend is not a fixed leverage ratio.** 70% QQQ + 30% QLD is only equivalent to a static 1.3x
-  daily-reset product under daily rebalancing; at this repo's default monthly cadence the two legs
-  compound independently between rebalances and realized exposure drifts from the `1+w` target. See
-  `qqq_qld.leverage` and methodology section 6.1.
+- **A blend is not a fixed leverage ratio, for two separate reasons.** QLD's real return only
+  approximates 2x QQQ's (it embeds QLD's own expense ratio and financing spread), so a gap against
+  a frictionless synthetic `(1+w)`x product persists even under daily rebalancing, proportional to
+  QLD weight. Separately, at this repo's default monthly cadence the two legs also compound
+  independently between rebalances, drifting exposure further from `1+w`. The second effect is
+  empirically much smaller than the first on this dataset. See `qqq_qld.leverage` and methodology
+  section 6.1.
 - **The Kelly-implied leverage is extremely sensitive to the assumed forward return.** Using this
   sample's trailing return, full-Kelly implies up to 100% QLD. But that trailing return reflects an
   exceptional historical window, not a forecast, and Kelly leverage is far more sensitive to that

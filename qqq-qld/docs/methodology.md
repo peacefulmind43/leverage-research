@@ -101,21 +101,29 @@ exposure — not as a precise target.
 ### 6.1 A blend is not the same as a fixed-leverage position
 
 `qqq_qld.optimize.kelly_implied_qld_weight` clips \(L^*-1\) into the achievable \([0,1]\) QLD
-weight range so it can be read as a QQQ/QLD allocation. This mapping is only exact under one
-specific condition: **daily rebalancing**. QLD's daily return is approximately \(2r_t\), where
-\(r_t\) is QQQ's daily return. A blend with QLD weight \(w\), rebalanced to target every day,
-therefore has daily return
+weight range so it can be read as a QQQ/QLD allocation. This mapping is an idealization with two
+separate sources of error, which are easy to conflate:
+
+**QLD is a real fund, not literally \(2r_t\).** QLD's daily return is only *approximately*
+\(2r_t\), where \(r_t\) is QQQ's daily return — the real fund's return is \(2r_t\) minus its own
+daily expense-ratio and financing-spread drag on the leveraged notional. The algebraic identity
 
 \[
 (1-w)\,r_t + w\,(2r_t) = (1+w)\,r_t,
 \]
 
-which is algebraically identical to a synthetic \((1+w)\)x daily-reset leveraged product. It is
-*not* identical under less frequent rebalancing (this repository's default is monthly, `ME`):
-between rebalance dates the QQQ and QLD legs compound independently, so the blend's realized
-exposure drifts away from \(1+w\) rather than tracking it exactly — a smaller-scale version of
-the same volatility-drag mechanism that makes QLD itself diverge from "2x QQQ" over multi-day
-holding periods.
+which makes a QLD-weight-\(w\) blend rebalanced daily *exactly* equal to a synthetic
+\((1+w)\)x daily-reset product, only holds for this idealized \(2r_t\), not for QLD's real
+return. Substituting the real fund's return, a daily-rebalanced blend already carries a gap
+against a *frictionless* synthetic \((1+w)\)x product, proportional to \(w\), that does not
+close no matter how often the blend rebalances.
+
+**Rebalancing cadence adds a second, separate effect.** Independent of the point above, this
+repository's default monthly (`ME`) cadence lets the QQQ/QLD weight drift between rebalance
+dates rather than tracking \(1+w\) continuously — a smaller-scale version of the same
+volatility-drag mechanism that makes QLD itself diverge from "2x QQQ" over multi-day holding
+periods. This is the effect that daily rebalancing specifically would reduce; it is empirically
+much smaller than the first effect on this dataset (see below).
 
 `qqq_qld.leverage` makes this concrete instead of leaving it as an assumption:
 
@@ -124,14 +132,20 @@ holding periods.
   approximation above), so it captures real discretized volatility drag and serves as ground
   truth for a given \(L\).
 - `rebalance_drag` backtests the real QQQ/QLD blend at a given weight and rebalancing frequency
-  (via `qqq_qld.backtest.portfolio_returns`) against that synthetic benchmark, reporting the CAGR
-  gap and return correlation between the two.
+  (via `qqq_qld.backtest.portfolio_returns`) against that frictionless synthetic benchmark,
+  reporting the CAGR gap and return correlation between the two. Because the synthetic omits
+  QLD's own real costs, this gap bundles both effects above — it is not purely a cadence
+  measurement.
 - `compare_rebalance_frequencies` holds the target weight fixed and varies only the rebalancing
-  cadence, showing empirically how much cadence alone changes the outcome on this dataset.
+  cadence. Its `D` (daily) row still carries the full real-cost effect; the *change* from that
+  row to slower cadences is the cadence effect in isolation. On this dataset at a representative
+  nonzero QLD weight, that incremental cadence effect is roughly an order of magnitude smaller
+  than the real-cost baseline already present at daily cadence.
 
 `results/summary.md`'s Kelly section reports these comparisons at this repository's actual
 configured rebalancing frequency, so the gap between "target exposure" and "realized exposure"
-is shown rather than assumed away.
+is shown rather than assumed away — and shows the daily-cadence row alongside it specifically so
+the real-cost baseline isn't mistaken for a cadence effect.
 
 ### 6.2 Why μ deserves the most scrutiny
 

@@ -35,21 +35,21 @@ This is a point estimate from `mu / sigma^2`, ignores financing spread and fund 
 
 ### A blend is not the same as a fixed-leverage position
 
-**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position.** QLD's daily return is approximately 2x QQQ's, so a blend rebalanced *every day* would have daily return `(1-w)*r + w*2r = (1+w)*r` — exactly a synthetic `(1+w)`x daily-reset product. This report's blend rebalances ME, so between rebalances the two legs compound independently and realized exposure drifts away from `1+w`. The table below quantifies the resulting gap at this report's actual rebalancing cadence, comparing each weight's real backtested blend to the idealized, frictionless synthetic exposure it targets:
+**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position, for two separate reasons.** First, QLD's real daily return is only *approximately* 2x QQQ's — it embeds QLD's own expense ratio and financing spread — so even a blend rebalanced *every day* would show a gap against a *frictionless* synthetic `(1+w)`x daily-reset product, proportional to the QLD weight, that does not close no matter how often the blend rebalances. Second, and separately, this report's blend rebalances ME rather than daily, so between rebalances the two legs compound independently and realized exposure drifts further away from `1+w`. The table below quantifies the combined gap at this report's actual rebalancing cadence, comparing each weight's real backtested blend to the idealized, frictionless synthetic exposure it targets — see the frequency table further below to see the two effects separated (its `D` row isolates the first effect alone):
 
 | Weight | Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |
 |---|---:|---:|---:|---:|---:|
 | Half-Kelly | 1.83x | 27.8% | 24.3% | -3.5% | 0.997 |
 | Max-Sharpe (grid) | 1.00x | 16.7% | 16.7% | 0.0% | 1.000 |
 
-Holding the weight fixed at the max-Sharpe allocation above, rebalancing cadence alone changes the outcome as follows:
+Holding the weight fixed at the half-Kelly allocation above (chosen because it carries a nonzero QLD weight, unlike this dataset's max-Sharpe allocation), rebalancing cadence alone changes the outcome as follows. Compare each row to the `D` (daily) row, not to zero: the gap remaining at `D` is QLD's own real cost drag, not a cadence effect, and only the *additional* gap at slower cadences reflects rebalancing frequency itself:
 
 | rebalance   |   target_leverage |   synthetic_cagr |   actual_cagr |   cagr_gap |   synthetic_volatility |   actual_volatility |   return_correlation |
 |:------------|------------------:|-----------------:|--------------:|-----------:|-----------------------:|--------------------:|---------------------:|
-| D           |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
-| W           |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
-| ME          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
-| QE          |            1.0000 |           0.1667 |        0.1667 |     0.0000 |                 0.2208 |              0.2208 |               1.0000 |
+| D           |            1.8324 |           0.2778 |        0.2435 |    -0.0343 |                 0.4045 |              0.4029 |               0.9966 |
+| W           |            1.8324 |           0.2778 |        0.2429 |    -0.0348 |                 0.4045 |              0.4027 |               0.9966 |
+| ME          |            1.8324 |           0.2778 |        0.2427 |    -0.0351 |                 0.4045 |              0.4018 |               0.9966 |
+| QE          |            1.8324 |           0.2778 |        0.2435 |    -0.0342 |                 0.4045 |              0.4014 |               0.9966 |
 
 ### Sensitivity to the assumed forward return (μ)
 

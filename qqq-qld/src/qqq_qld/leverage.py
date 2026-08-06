@@ -1,10 +1,24 @@
 """Idealized daily-reset leverage benchmark and rebalancing-drag diagnostics.
 
 Quantifies the gap between a periodically rebalanced QQQ/QLD blend (the real,
-tradable strategy simulated in ``backtest.py``) and a hypothetical continuously
-daily-reset leveraged product at the same target exposure. The two are only
-equivalent when the blend itself is rebalanced daily; see docs/methodology.md
-section 6.
+tradable strategy simulated in ``backtest.py``, using QLD's actual fund returns)
+and a hypothetical, frictionless (by default) daily-reset leveraged product at
+the same target exposure. Two distinct effects open this gap, and it is easy to
+conflate them:
+
+1. **QLD's own real costs.** QLD's real daily return is only *approximately*
+   2x QQQ's -- it embeds QLD's own expense ratio and daily financing spread on
+   its leveraged notional. ``simulate_daily_reset_leverage`` defaults those
+   costs to zero, so comparing real QLD-based returns against that frictionless
+   default carries a persistent gap proportional to QLD weight, present at
+   *any* rebalancing cadence, including daily.
+2. **Rebalancing cadence.** Independent of (1), a blend that rebalances less
+   often than daily lets the QQQ/QLD weight drift between rebalance dates,
+   adding a further, typically much smaller, path-dependent gap on top.
+
+``compare_rebalance_frequencies`` isolates (2): its ``D`` (daily) row still
+carries the full effect of (1), so read the *change* across rows, not the
+absolute level, as the cadence effect. See docs/methodology.md section 6.1.
 """
 
 from __future__ import annotations
@@ -50,10 +64,13 @@ def rebalance_drag(
 ) -> dict[str, float | str]:
     """Compare an actual QQQ/QLD blend to the idealized synthetic exposure it targets.
 
-    The blend's target exposure is ``1 + weight_qld``. Under daily rebalancing this
-    equals the synthetic :func:`simulate_daily_reset_leverage` product exactly (up
-    to trading costs); under less frequent rebalancing the two diverge, which this
-    reports as ``cagr_gap`` and ``return_correlation``.
+    The blend's target exposure is ``1 + weight_qld``. ``cagr_gap`` and
+    ``return_correlation`` report the resulting divergence, but do not attribute
+    it to rebalancing cadence alone: the frictionless-by-default synthetic omits
+    QLD's own real expense ratio and financing spread, so a gap persists even at
+    daily cadence, proportional to ``weight_qld``. Use
+    :func:`compare_rebalance_frequencies` to see the incremental cadence effect
+    on top of that baseline. See docs/methodology.md section 6.1.
     """
     target_leverage = 1.0 + weight_qld
     synthetic = simulate_daily_reset_leverage(returns[asset], target_leverage)
@@ -86,7 +103,12 @@ def compare_rebalance_frequencies(
     annual_risk_free_rate: float = 0.0,
     asset: str = "QQQ",
 ) -> pd.DataFrame:
-    """Show how rebalancing cadence changes the achieved result for a fixed target weight."""
+    """Show how rebalancing cadence changes the achieved result for a fixed target weight.
+
+    Every row still carries QLD's real cost drag versus the frictionless synthetic
+    (see module docstring); compare rows to each other, not to zero, to read off
+    the cadence effect alone.
+    """
     rows = [
         rebalance_drag(
             returns,

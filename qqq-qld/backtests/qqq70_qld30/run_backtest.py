@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from qqq_qld.backtest import portfolio_returns  # noqa: E402
 from qqq_qld.data import download_prices, prices_to_returns  # noqa: E402
-from qqq_qld.leverage import rebalance_drag  # noqa: E402
+from qqq_qld.leverage import compare_rebalance_frequencies  # noqa: E402
 from qqq_qld.metrics import drawdown, performance_metrics  # noqa: E402
 from qqq_qld.optimize import kelly_optimal_leverage, kelly_sensitivity  # noqa: E402
 
@@ -159,7 +159,7 @@ def _write_readme(
     summary: pd.DataFrame,
     annual: pd.DataFrame,
     episodes: pd.DataFrame,
-    drag: dict[str, float | str],
+    drag_table: pd.DataFrame,
     sensitivity: pd.DataFrame,
     rebalance: str,
     cost_bps: float,
@@ -188,6 +188,19 @@ def _write_readme(
     display_episodes = episodes.copy()
     if not display_episodes.empty:
         display_episodes["max_drawdown"] = display_episodes["max_drawdown"].map(_pct)
+
+    display_drag = drag_table[
+        ["synthetic_cagr", "actual_cagr", "cagr_gap", "return_correlation"]
+    ].copy()
+    for column in ["synthetic_cagr", "actual_cagr", "cagr_gap"]:
+        display_drag[column] = display_drag[column].map(_pct)
+    display_drag["return_correlation"] = display_drag["return_correlation"].map(
+        lambda x: f"{x:.3f}"
+    )
+    daily_gap = drag_table.loc["D", "cagr_gap"]
+    actual_cadence = drag_table.index[-1]
+    actual_gap = drag_table.loc[actual_cadence, "cagr_gap"]
+    cadence_only_gap = actual_gap - daily_gap
 
     display_sensitivity = sensitivity.copy()
     display_sensitivity["assumed_mu"] = display_sensitivity["assumed_mu"].map(_pct)
@@ -261,24 +274,29 @@ def _write_readme(
         "",
         "## This is not a fixed 1.30x position",
         "",
-        "70% QQQ + 30% QLD targets **1.30x** exposure, but that identity only holds exactly "
-        "under **daily** rebalancing. This backtest rebalances `ME` (month-end), so between "
-        "rebalances the two legs compound independently and realized exposure drifts away from "
-        "1.30x -- the table below compares this real, cost-inclusive blend to the idealized, "
-        "frictionless synthetic 1.30x daily-reset product it targets (see `qqq_qld.leverage` and "
-        "`docs/methodology.md` section 6.1):",
+        "70% QQQ + 30% QLD targets **1.30x** exposure, but real QLD is not literally 2x QQQ -- "
+        "it carries its own expense ratio and financing spread on the leveraged notional. So "
+        "even under **daily** rebalancing, this blend shows a gap against a *frictionless* "
+        "synthetic 1.30x daily-reset product; that gap does not close no matter how often the "
+        "blend rebalances. This backtest's `ME` (month-end) cadence adds a second, separate, "
+        "and much smaller effect on top: between rebalances the two legs compound independently "
+        "and exposure drifts a little further from 1.30x. The table below shows both rows so the "
+        "two effects don't get conflated (see `qqq_qld.leverage` and `docs/methodology.md` "
+        "section 6.1):",
         "",
-        f"| Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |\n"
-        f"|---:|---:|---:|---:|---:|\n"
-        f"| {drag['target_leverage']:.2f}x | {_pct(drag['synthetic_cagr'])} | "
-        f"{_pct(drag['actual_cagr'])} | {_pct(drag['cagr_gap'])} | "
-        f"{drag['return_correlation']:.3f} |",
+        display_drag.to_markdown(),
+        "",
+        f"Of the **{_pct(actual_gap)}** total CAGR gap at this backtest's actual `ME` cadence, "
+        f"**{_pct(daily_gap)}** is already present at daily rebalancing -- that's QLD's own real "
+        f"cost drag, not a rebalancing artifact. Only the remaining **{_pct(cadence_only_gap)}** "
+        "is attributable to rebalancing monthly instead of daily.",
         "",
         "## Forward-looking caveat: is 30% QLD still justified?",
         "",
-        "The full-period result above (**19.7% CAGR**) describes this specific historical "
-        "window; it is not a forecast. Kelly-optimal leverage (`L* = mu / sigma^2`) is linear in "
-        "the assumed forward return `mu` but only quadratically penalized by variance -- and "
+        f"The full-period result above (**{_pct(target['cagr'])} CAGR**) describes this specific "
+        "historical window; it is not a forecast. Kelly-optimal leverage (`L* = mu / sigma^2`) "
+        "is linear in the assumed forward return `mu` but only quadratically penalized by "
+        "variance -- and "
         "`mu` is far less reliable to estimate from trailing data than variance is. The table "
         "below holds this sample's volatility fixed and recomputes the Kelly-implied leverage "
         "and QLD weight under alternative forward-`mu` assumptions (editable in "
@@ -355,10 +373,13 @@ def main() -> None:
     annual = _period_returns(strategy_returns, "Y")
     monthly = _period_returns(strategy_returns[["70% QQQ / 30% QLD"]], "M")
     episodes = _drawdown_episodes(strategy_returns["70% QQQ / 30% QLD"])
-    drag = rebalance_drag(
+    # Include the daily ("D") row alongside the actual configured cadence so the README can
+    # separate QLD's own real cost drag (present even at "D") from the cadence effect on top.
+    frequencies = tuple(dict.fromkeys(("D", portfolio_cfg["rebalance"])))
+    frequency_table = compare_rebalance_frequencies(
         returns,
         TARGET_WEIGHT_QLD,
-        rebalance=portfolio_cfg["rebalance"],
+        frequencies=frequencies,
         transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
         annual_risk_free_rate=risk_free_rate,
     )
@@ -371,7 +392,7 @@ def main() -> None:
     annual.to_csv(results_dir / "calendar_year_returns.csv")
     monthly.to_csv(results_dir / "monthly_returns.csv")
     episodes.to_csv(results_dir / "largest_drawdowns.csv", index=False)
-    pd.DataFrame([drag]).to_csv(results_dir / "rebalance_drag.csv", index=False)
+    frequency_table.to_csv(results_dir / "rebalance_drag.csv")
     sensitivity.to_csv(results_dir / "kelly_sensitivity.csv")
     _save_figures(strategy_returns, assets_dir, portfolio_cfg["initial_value"])
     _write_readme(
@@ -379,7 +400,7 @@ def main() -> None:
         summary,
         annual,
         episodes,
-        drag,
+        frequency_table,
         sensitivity,
         portfolio_cfg["rebalance"],
         portfolio_cfg["transaction_cost_bps"],

@@ -84,9 +84,11 @@ def run(
         "Half-Kelly": rebalance_drag(returns, half_kelly_weight, **common),
         "Max-Sharpe (grid)": rebalance_drag(returns, max_sharpe_weight, **common),
     }
+    # Fixed at the half-Kelly weight rather than max_sharpe_weight: the latter is 0% QLD
+    # on this dataset, which would make every cadence identical and hide the cadence effect.
     frequency_table = compare_rebalance_frequencies(
         returns,
-        max_sharpe_weight,
+        half_kelly_weight,
         transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
         annual_risk_free_rate=opt["annual_risk_free_rate"],
     )
