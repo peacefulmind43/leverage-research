@@ -42,21 +42,21 @@ This is `(mu - c) / (gamma * sigma^2)` evaluated at an estimated all-in financin
 
 ### A blend is not the same as a fixed-leverage position
 
-**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position, for two separate reasons.** First, QLD's real daily return is only *approximately* 2x QQQ's — it embeds QLD's own expense ratio and financing spread — so even a blend rebalanced *every day* would show a gap against a *frictionless* synthetic `(1+w)`x daily-reset product, proportional to the QLD weight, that does not close no matter how often the blend rebalances. Second, and separately, this report's blend rebalances ME rather than daily, so between rebalances the two legs compound independently and realized exposure drifts further away from `1+w`. The table below quantifies the combined gap at this report's actual rebalancing cadence, comparing each weight's real backtested blend to the idealized, frictionless synthetic exposure it targets — see the frequency table further below to see the two effects separated (its `D` row isolates the first effect alone):
+**A QQQ/QLD blend is not the same as a static fixed-leverage QQQ position, for two separate reasons.** First, QLD's real daily return is only *approximately* 2x QQQ's — it embeds QLD's own expense ratio and financing spread — so even a blend rebalanced *every day* would show a gap against a *frictionless* synthetic `(1+w)`x daily-reset product, proportional to the QLD weight, that does not close no matter how often the blend rebalances. Second, and separately, this report's blend rebalances ME rather than daily, so between rebalances the two legs compound independently and realized exposure drifts further away from `1+w`. The table below quantifies the combined gap at this report's actual rebalancing cadence, comparing each weight's real backtested blend to the idealized, frictionless synthetic exposure it targets — see the frequency table further below to see the two effects separated (its `D` row isolates the first effect alone):
 
 | Weight | Target exposure | Synthetic CAGR | Actual CAGR | CAGR gap | Return correlation |
 |---|---:|---:|---:|---:|---:|
-| Kelly-implied | 1.85x | 23.8% | 18.7% | -5.0% | 0.999 |
-| Reference 30% QLD | 1.30x | 18.9% | 17.1% | -1.8% | 1.000 |
+| Kelly-implied (trailing sample) | 1.85x | 23.8% | 18.7% | -5.0% | 0.999 |
+| Recommended weight | 1.23x | 18.2% | 16.8% | -1.4% | 1.000 |
 
-Holding the weight fixed at the half-Kelly allocation above (chosen because it carries a nonzero QLD weight, unlike this dataset's max-Sharpe allocation), rebalancing cadence alone changes the outcome as follows. Compare each row to the `D` (daily) row, not to zero: the gap remaining at `D` is QLD's own real cost drag, not a cadence effect, and only the *additional* gap at slower cadences reflects rebalancing frequency itself:
+Holding the weight fixed at this report's recommended allocation, rebalancing cadence alone changes the outcome as follows. Compare each row to the `D` (daily) row, not to zero: the gap remaining at `D` is QLD's own real cost drag, not a cadence effect, and only the *additional* gap at slower cadences reflects rebalancing frequency itself:
 
 | rebalance   |   target_leverage |   synthetic_cagr |   actual_cagr |   cagr_gap |   synthetic_volatility |   actual_volatility |   return_correlation |
 |:------------|------------------:|-----------------:|--------------:|-----------:|-----------------------:|--------------------:|---------------------:|
-| D           |            1.3000 |           0.1893 |        0.1721 |    -0.0172 |                 0.3337 |              0.3334 |               0.9997 |
-| W           |            1.3000 |           0.1893 |        0.1712 |    -0.0181 |                 0.3337 |              0.3327 |               0.9997 |
-| ME          |            1.3000 |           0.1893 |        0.1714 |    -0.0179 |                 0.3337 |              0.3315 |               0.9996 |
-| QE          |            1.3000 |           0.1893 |        0.1738 |    -0.0155 |                 0.3337 |              0.3303 |               0.9994 |
+| D           |            1.2300 |           0.1816 |        0.1685 |    -0.0131 |                 0.3158 |              0.3155 |               0.9998 |
+| W           |            1.2300 |           0.1816 |        0.1677 |    -0.0139 |                 0.3158 |              0.3149 |               0.9998 |
+| ME          |            1.2300 |           0.1816 |        0.1679 |    -0.0137 |                 0.3158 |              0.3139 |               0.9997 |
+| QE          |            1.2300 |           0.1816 |        0.1699 |    -0.0117 |                 0.3158 |              0.3129 |               0.9996 |
 
 ### Sensitivity to the assumed forward return (μ)
 

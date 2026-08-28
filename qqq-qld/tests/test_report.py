@@ -114,7 +114,7 @@ def test_write_summary_produces_expected_sections(tmp_path):
     assert "## Out-of-sample performance and stability" in text
     assert "## Growth-optimal leverage (Kelly estimate)" in text
     assert "full-Kelly" in text
-    assert "not the same as a static 1.3x-leveraged QQQ position" in text
+    assert "not the same as a static fixed-leverage QQQ position" in text
     assert "Half-Kelly" in text
     assert "Max-Sharpe (grid)" in text
     assert "### Sensitivity to the assumed forward return" in text

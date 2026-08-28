@@ -180,17 +180,6 @@ def run(
         risk_aversion=risk_aversion,
     )
     kelly_weight = kelly_implied_qld_weight(kelly)
-    reference_weight = max(kelly_implied_qld_weight({"full_kelly": kelly["half_kelly"]}), 0.30)
-    drag_rows = {
-        "Kelly-implied": rebalance_drag(returns, kelly_weight, **common),
-        "Reference 30% QLD": rebalance_drag(returns, 0.30, **common),
-    }
-    frequency_table = compare_rebalance_frequencies(
-        returns,
-        reference_weight,
-        transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
-        annual_risk_free_rate=opt["annual_risk_free_rate"],
-    )
     trailing_geometric = float(
         (1 + returns["QQQ"]).prod() ** (252 / len(returns)) - 1
     )
@@ -263,6 +252,16 @@ def run(
     # Include the recommended weight itself, so the drawdown quoted in the
     # operating summary is that allocation's rather than the nearest gridpoint's.
     recommended_weight = round(recommendation["empirical"] - 1.0, 3)
+    drag_rows = {
+        "Kelly-implied (trailing sample)": rebalance_drag(returns, kelly_weight, **common),
+        "Recommended weight": rebalance_drag(returns, recommended_weight, **common),
+    }
+    frequency_table = compare_rebalance_frequencies(
+        returns,
+        recommended_weight,
+        transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
+        annual_risk_free_rate=opt["annual_risk_free_rate"],
+    )
     extras["stress"] = stress_episodes(
         returns, weights=tuple(sorted({0.0, 0.15, recommended_weight, 0.3, 0.5, 1.0}))
     )

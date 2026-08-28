@@ -537,7 +537,7 @@ def write_summary(
         "",
         "### A blend is not the same as a fixed-leverage position",
         "",
-        "**70% QQQ + 30% QLD is not the same as a static 1.3x-leveraged QQQ position, for two "
+        f"**A QQQ/QLD blend is not the same as a static fixed-leverage QQQ position, for two "
         "separate reasons.** First, QLD's real daily return is only *approximately* 2x QQQ's — "
         "it embeds QLD's own expense ratio and financing spread — so even a blend rebalanced "
         "*every day* would show a gap against a *frictionless* synthetic `(1+w)`x daily-reset "
@@ -562,8 +562,7 @@ def write_summary(
         )
     lines += [
         "",
-        "Holding the weight fixed at the half-Kelly allocation above (chosen because it carries "
-        "a nonzero QLD weight, unlike this dataset's max-Sharpe allocation), rebalancing cadence "
+        "Holding the weight fixed at this report's recommended allocation, rebalancing cadence "
         "alone changes the outcome as follows. Compare each row to the `D` (daily) row, not to "
         "zero: the gap remaining at `D` is QLD's own real cost drag, not a cadence effect, and "
         "only the *additional* gap at slower cadences reflects rebalancing frequency itself:",

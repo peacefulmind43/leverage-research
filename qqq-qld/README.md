@@ -211,7 +211,4 @@ short rate — the leverage recommendation moves with it. Set `extend.enabled: f
 QLD's live history alone, at the cost of dropping the worst episode from the sample. Results are
 written to `results/summary.md` and `assets/`.
 
-A separate, detailed backtest of one specific allocation is in
-[`backtests/qqq70_qld30`](backtests/qqq70_qld30).
-
 This repository is provided for reference only. Not financial advice.
