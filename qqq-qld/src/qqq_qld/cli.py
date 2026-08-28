@@ -133,7 +133,6 @@ def run(
             "from that date on. See the reconstruction fit below."
         )
     extras["window_note"] = window_note
-    extras["stress"] = stress_episodes(returns)
 
     risk_aversion = opt.get("risk_aversion", 1.0)
     common = dict(
@@ -261,6 +260,12 @@ def run(
         grid=np.arange(1.0, 1.81, 0.01),
     )
     extras["recommendation"] = recommendation
+    # Include the recommended weight itself, so the drawdown quoted in the
+    # operating summary is that allocation's rather than the nearest gridpoint's.
+    recommended_weight = round(recommendation["empirical"] - 1.0, 3)
+    extras["stress"] = stress_episodes(
+        returns, weights=tuple(sorted({0.0, 0.15, recommended_weight, 0.3, 0.5, 1.0}))
+    )
     extras["horizon_table"] = horizon
     extras["flatness"] = flatness(horizon)
     box = sensitivity_box()

@@ -30,6 +30,28 @@ a preference. (True risk *neutrality* is `gamma = 0`, which prescribes unbounded
 certain ruin, so "only cares about money" has to mean maximising the growth rate, not expected
 wealth.)
 
+### How to actually run it
+
+The full decision sequence, with live numbers, is the **"What to actually do"** section at the top
+of [`results/summary.md`](results/summary.md); it is generated from the config, so editing the
+assumptions edits the instructions. In short:
+
+1. **Compare two borrowing rates.** The blend charges 5.41% all-in. Look up the margin rate your
+   broker would actually charge at your balance and take the cheaper — but note the blend cannot be
+   margin-called, and at low leverage the gap is small either way.
+2. **Pick the leverage from your own return view**, using the required-return table. The point
+   estimate is a default, not a finding.
+3. **Cap it at about 1.3x.** Past there, median wealth falls *and* the tail worsens. This holds
+   across the whole input range, unlike the exact figure below it.
+4. **Set the rebalancing band by account type:** ±3 points of QLD weight in a sheltered account,
+   ±20 or wider in a taxable one — and if you are still contributing, rebalance with new money
+   instead, which costs no realised gain at all.
+5. **Re-run when rates move.** One point on the financing rate is worth about 0.18x of leverage.
+
+And price the path first: through 2000-2002 this allocation drew down **90%**, needing an 890% gain
+to recover. Every figure here assumes you hold through that. If you would have sold, the honest
+adjustment is less leverage, not more tolerance.
+
 ### What is measured and what is asserted
 
 Confidence in the parts of this analysis is very unequal, and the parts are separable:

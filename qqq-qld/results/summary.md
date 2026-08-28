@@ -128,6 +128,34 @@ Block-bootstrapped holding periods, so volatility clustering survives resampling
 
 Note the shape near the optimum: the median is nearly flat while the 5th percentile deteriorates quickly. That asymmetry is a reason to err below a leverage estimate rather than above it, and it follows from the curvature of the growth function rather than from any attitude to risk.
 
+## What to actually do
+
+In the order the decisions have to be made. Steps 1 and 5 are factual and worth getting right; steps 2 and 4 depend on things about you that this repository does not know.
+
+**1. Decide how to borrow, by comparing two rates.** This is the only step with a clean answer. Borrowing through the blend costs **5.41%** all-in. Look up the margin rate your broker would actually charge you -- the tier for your balance, not the headline -- and take the cheaper. Box-spread or futures financing is usually cheapest of the three and worth pricing if the amounts justify the complexity. Two caveats: the blend cannot be margin-called, which is worth real money in a deep drawdown, and at low leverage the difference is small either way -- at 20% QLD the fee premium costs about 0.11% a year, which is not what this decision turns on.
+
+**2. Choose the leverage from your own forward-return view, not from this number.** The point estimate is **1.23x** (23% QLD), but it is a function of an assumed forward return that no method here estimates, and the defensible range is **0.89x to 1.92x**. Read the required-return table above, pick the row whose return you actually believe, and use that. If you have no view, the point estimate is a reasonable default -- but it is a default, not a finding.
+
+**3. Do not exceed about 1.3x.** This one holds across the whole input range rather than depending on the return assumption. Past roughly 1.3x, median terminal wealth *falls* while the left tail keeps deteriorating -- both directions worse, which is not a trade-off but a mistake. The ceiling matters far more than the exact figure inside it: moving anywhere within 1.0x-1.3x changes median 30-year wealth by around 0.1% a year, which is inside the error of the assumption that produced it.
+
+**4. Set the rebalancing band by account type, and mind the tax.**
+
+- *Sheltered account:* a band of about **±3 percentage points** of QLD weight, so roughly 20%-26% QLD. Costs about 0.002% a year and trades once or twice a year.
+- *Taxable account:* **±20 points, or wider.** Realising gains costs two to three orders of magnitude more than an ETF spread, and drifting away from target costs almost nothing by comparison -- it is a second-order penalty. A ±1 point band in a taxable account burns roughly 2% a year, which is more than ten times what the leverage earns.
+- *Better than either, if you are still contributing:* rebalance with new money. Directing contributions to whichever leg is light gets you exposure control with no realised gain at all, and dominates any choice of band.
+
+**5. Re-run this when rates move.** The financing cost is the one input that is both knowable and moving. Update `costs.benchmark_rate` and, for a multi-decade holding period, `recommendation.benchmark_rate` -- which should be your view of the *average future* short rate, not today's. One percentage point on it moves the recommended leverage by about 0.18x, in the opposite direction; the forward return moves it by the same amount in the same direction, since only the spread between them matters.
+
+**Before any of it, price the path.** Through 2000-2002 this allocation would have drawn down **-90%**, needing a **890%** gain to recover; unlevered QQQ drew down 83% over the same window. Every figure above assumes you hold through that. If you would have sold, the honest input is a lower leverage, not a higher tolerance -- selling at the bottom converts a paper drawdown into the permanent loss the whole calculation was built to avoid.
+
+**And what not to do,** each of which this repository got wrong at some point and corrected:
+
+- Do not pick leverage by Sharpe, Sortino or Calmar. They are scale-invariant, so their answer is the lowest-leverage option regardless of the data.
+- Do not use trailing returns as the forward return. This sample's 15.4% is the realised return of the best-performing major index, selected in hindsight.
+- Do not price the borrowing at zero. It belongs in the numerator of the Kelly ratio.
+- Do not take the conservative end of every input at once. That lands on the corner of the plausible region while looking like the middle of it.
+- Do not act on a third decimal place. Monthly rebalancing drift alone is five times larger than it.
+
 ## What QLD charges to lend
 
 QLD's daily objective is exactly 2x the index, so the shortfall of its realised return against twice QQQ's identifies its embedded cost. Netting out QQQ's own expense ratio (which QLD does not pay) and a contemporaneous 3-month bill leaves the spread its swap counterparties charged. The fee premium below is a closed form, `ER_QLD - 2*ER_QQQ`, and is invariant to the blend weight: it is the extra cost per dollar borrowed of borrowing through the blend rather than on margin.
@@ -154,14 +182,14 @@ The spread is not constant -- it reflects funding conditions at the time, and wi
 
 The binding constraint on a leveraged position is not its average outcome but whether the worst realised path would have ended it. Recovering from a drawdown of `d` requires a gain of `d/(1-d)`, so these differences are not linear in pain.
 
-| episode           |   qld_0% |   qld_15% |   qld_30% |   qld_50% |   qld_100% |
-|:------------------|---------:|----------:|----------:|----------:|-----------:|
-| 1987 crash        |   -0.399 |    -0.441 |    -0.482 |    -0.536 |     -0.667 |
-| Dot-com 2000-2002 |   -0.826 |    -0.878 |    -0.915 |    -0.949 |     -0.987 |
-| GFC 2007-2009     |   -0.534 |    -0.592 |    -0.648 |    -0.712 |     -0.831 |
-| COVID 2020        |   -0.286 |    -0.323 |    -0.360 |    -0.406 |     -0.517 |
-| 2022 rate shock   |   -0.348 |    -0.398 |    -0.446 |    -0.505 |     -0.632 |
-| Full sample       |   -0.826 |    -0.878 |    -0.915 |    -0.949 |     -0.988 |
+| episode           |   qld_0% |   qld_15% |   qld_23% |   qld_30% |   qld_50% |   qld_100% |
+|:------------------|---------:|----------:|----------:|----------:|----------:|-----------:|
+| 1987 crash        |   -0.399 |    -0.441 |    -0.463 |    -0.482 |    -0.536 |     -0.667 |
+| Dot-com 2000-2002 |   -0.826 |    -0.878 |    -0.899 |    -0.915 |    -0.949 |     -0.987 |
+| GFC 2007-2009     |   -0.534 |    -0.592 |    -0.623 |    -0.648 |    -0.712 |     -0.831 |
+| COVID 2020        |   -0.286 |    -0.323 |    -0.343 |    -0.360 |    -0.406 |     -0.517 |
+| 2022 rate shock   |   -0.348 |    -0.398 |    -0.424 |    -0.446 |    -0.505 |     -0.632 |
+| Full sample       |   -0.826 |    -0.878 |    -0.899 |    -0.915 |    -0.949 |     -0.988 |
 
 ## Reconstruction fit over the live overlap
 

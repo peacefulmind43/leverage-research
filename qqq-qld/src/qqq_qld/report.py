@@ -16,6 +16,112 @@ def _pct(value: float) -> str:
     return "N/A" if pd.isna(value) else f"{value:.1%}"
 
 
+def _operating_section(extras: dict[str, object] | None) -> list[str]:
+    """A decision sequence, in the order the decisions actually have to be made.
+
+    Written last on purpose. Everything above this in the report is analysis and
+    can be argued with; this is what to do about it, and it is separated so the
+    two are not mistaken for each other. Numbers are interpolated from the run
+    rather than written down, so editing the config edits the instructions.
+    """
+    if not extras or not extras.get("recommendation"):
+        return []
+    rec = extras["recommendation"]
+    costs = extras.get("costs") or {}
+    band = extras.get("credible_range") or {}
+    stress = extras.get("stress")
+    point = rec.get("empirical", rec["recommended_leverage"])
+    weight = point - 1.0
+
+    dot_com = None
+    if stress is not None and "Dot-com 2000-2002" in stress.index:
+        exact = f"qld_{weight:.0%}"
+        if exact in stress.columns:
+            dot_com = float(stress.loc["Dot-com 2000-2002", exact])
+
+    lines = [
+        "## What to actually do",
+        "",
+        "In the order the decisions have to be made. Steps 1 and 5 are factual and worth "
+        "getting right; steps 2 and 4 depend on things about you that this repository does not "
+        "know.",
+        "",
+        "**1. Decide how to borrow, by comparing two rates.** This is the only step with a "
+        f"clean answer. Borrowing through the blend costs **{costs.get('effective_rate', 0):.2%}** "
+        "all-in. Look up the margin rate your broker would actually charge you -- the tier for "
+        "your balance, not the headline -- and take the cheaper. Box-spread or futures financing "
+        "is usually cheapest of the three and worth pricing if the amounts justify the "
+        "complexity. Two caveats: the blend cannot be margin-called, which is worth real money "
+        "in a deep drawdown, and at low leverage the difference is small either way -- at 20% "
+        "QLD the fee premium costs about 0.11% a year, which is not what this decision turns on.",
+        "",
+        "**2. Choose the leverage from your own forward-return view, not from this number.** "
+        f"The point estimate is **{point:.2f}x** ({weight:.0%} QLD), but it is a function of an "
+        "assumed forward return that no method here estimates, and the defensible range is "
+        f"**{band.get('minimum', float('nan')):.2f}x to "
+        f"{band.get('maximum', float('nan')):.2f}x**. "
+        "Read the required-return table above, pick the row whose return you actually believe, "
+        "and use that. If you have no view, the point estimate is a reasonable default -- but it "
+        "is a default, not a finding.",
+        "",
+        "**3. Do not exceed about 1.3x.** This one holds across the whole input range rather "
+        "than depending on the return assumption. Past roughly 1.3x, median terminal wealth "
+        "*falls* while the left tail keeps deteriorating -- both directions worse, which is not "
+        "a trade-off but a mistake. The ceiling matters far more than the exact figure inside it: "
+        "moving anywhere within 1.0x-1.3x changes median 30-year wealth by around 0.1% a year, "
+        "which is inside the error of the assumption that produced it.",
+        "",
+        "**4. Set the rebalancing band by account type, and mind the tax.**",
+        "",
+        "- *Sheltered account:* a band of about **±3 percentage points** of QLD weight, so "
+        f"roughly {max(weight - 0.03, 0):.0%}-{weight + 0.03:.0%} QLD. Costs about 0.002% a year "
+        "and trades once or twice a year.",
+        "- *Taxable account:* **±20 points, or wider.** Realising gains costs two to three orders "
+        "of magnitude more than an ETF spread, and drifting away from target costs almost "
+        "nothing by comparison -- it is a second-order penalty. A ±1 point band in a taxable "
+        "account burns roughly 2% a year, which is more than ten times what the leverage earns.",
+        "- *Better than either, if you are still contributing:* rebalance with new money. "
+        "Directing contributions to whichever leg is light gets you exposure control with no "
+        "realised gain at all, and dominates any choice of band.",
+        "",
+        "**5. Re-run this when rates move.** The financing cost is the one input that is both "
+        "knowable and moving. Update `costs.benchmark_rate` and, for a multi-decade holding "
+        "period, `recommendation.benchmark_rate` -- which should be your view of the *average "
+        "future* short rate, not today's. One percentage point on it moves the recommended "
+        f"leverage by about {0.01 / rec['sigma2']:.2f}x, in the opposite direction; the forward "
+        "return moves it by the same amount in the same direction, since only the spread between "
+        "them matters.",
+        "",
+    ]
+    if dot_com is not None:
+        recovery = -dot_com / (1 + dot_com)
+        lines += [
+            "**Before any of it, price the path.** Through 2000-2002 this allocation would have "
+            f"drawn down **{dot_com:.0%}**, needing a **{recovery:.0%}** gain to recover; "
+            "unlevered QQQ drew down 83% over the same window. Every figure above assumes you "
+            "hold through that. If you would have sold, the honest input is a lower leverage, "
+            "not a higher tolerance -- selling at the bottom converts a paper drawdown into the "
+            "permanent loss the whole calculation was built to avoid.",
+            "",
+        ]
+    lines += [
+        "**And what not to do,** each of which this repository got wrong at some point and "
+        "corrected:",
+        "",
+        "- Do not pick leverage by Sharpe, Sortino or Calmar. They are scale-invariant, so their "
+        "answer is the lowest-leverage option regardless of the data.",
+        "- Do not use trailing returns as the forward return. This sample's 15.4% is the realised "
+        "return of the best-performing major index, selected in hindsight.",
+        "- Do not price the borrowing at zero. It belongs in the numerator of the Kelly ratio.",
+        "- Do not take the conservative end of every input at once. That lands on the corner of "
+        "the plausible region while looking like the middle of it.",
+        "- Do not act on a third decimal place. Monthly rebalancing drift alone is five times "
+        "larger than it.",
+        "",
+    ]
+    return lines
+
+
 def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
     """State the repository's own number, and what would have to be true for others."""
     if not extras or not extras.get("recommendation"):
@@ -169,6 +275,7 @@ def _extra_sections(extras: dict[str, object] | None) -> list[str]:
     if not extras:
         return []
     lines: list[str] = list(_recommendation_section(extras))
+    lines += _operating_section(extras)
 
     costs = extras.get("costs")
     if costs:
