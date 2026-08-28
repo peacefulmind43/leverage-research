@@ -45,6 +45,24 @@ Confidence in the parts of this analysis is very unequal, and the parts are sepa
 | Forward geometric return is 9.5% | an assumption; no method here estimates it | very low |
 | Therefore `L*` = 1.23x | inherits the two rows above | **low** |
 
+### On quoting decimals
+
+The deterministic estimator on a 0.001 grid returns **1.235x**. That figure is *reproducible* to
+three decimals and *accurate* to about ±0.5, and the gap between those two words is the whole
+point:
+
+| | Magnitude | What it does to the 3rd decimal |
+|---|---|---|
+| Input uncertainty (forward return ±2-3pp) | ±0.3 to ±0.5 | swamps it by 300-500x |
+| Monthly rebalancing drift at a 23% target | ±0.005 | swamps it by 5x |
+| Bootstrap resampling noise | ±0.02 | swamps it by 20x |
+
+Realised exposure at a 23% QLD target wanders between 1.204x and 1.249x under monthly
+rebalancing, so the third decimal is not merely unknowable — it is not *holdable*. Return and
+financing cost have equal and opposite derivatives (both `1/sigma^2`, about 18 per unit here),
+since only their spread matters; the return dominates because it is known far less precisely, not
+because the answer is more sensitive to it.
+
 The closed form is also biased about 0.1x high against daily rebalancing — verified on lognormal
 returns where the analytic answer is exact by construction — which is why the headline comes from
 the realised-path estimator rather than the formula.

@@ -450,3 +450,104 @@ def credible_range(
         result["point_estimate"] = float(point_estimate)
         result["percentile_of_point"] = float(100.0 * np.mean(values < point_estimate))
     return result
+
+
+def input_sensitivity(
+    returns: pd.Series,
+    financing_cost: float,
+    mu_geometric: float,
+    volatility: float,
+    bump: float = 0.001,
+    grid: np.ndarray | None = None,
+) -> pd.DataFrame:
+    """How far the optimum moves per unit change in each input.
+
+    The point of this is to establish the *accuracy* of a leverage figure, which
+    is a different question from its precision. A grid search reports as many
+    decimals as it is asked for, and those digits are reproducible; whether they
+    mean anything depends on how tightly the inputs are known.
+
+    A decimal place of leverage is only informative if the inputs are known to
+    better than the bump that moves the answer by that much. Here a tenth of a
+    percentage point on the forward return -- an order of magnitude finer than
+    anyone can forecast it -- moves the optimum by more than a hundredth of a
+    turn, which is what makes a third decimal place noise.
+
+    Note the return and the financing cost have *equal and opposite* derivatives,
+    both ``1 / sigma^2``, since the optimum depends only on the spread between
+    them. The return dominates the uncertainty not because the answer is more
+    sensitive to it but because it is known far less precisely: the financing
+    rate is measurable to a few tenths of a percentage point, while the forward
+    return is not pinned to within several. Comparing raw sensitivities rather
+    than sensitivity times uncertainty gets this backwards.
+    """
+    if grid is None:
+        grid = np.arange(0.5, 2.51, 0.001)
+    base = empirical_optimal_leverage(
+        returns, financing_cost, mu_geometric, volatility=volatility, grid=grid
+    )["empirical_leverage"]
+    rows = []
+    for name, kwargs in (
+        ("mu_geometric", {"mu_geometric": mu_geometric + bump}),
+        ("volatility", {"volatility": volatility + bump}),
+        ("financing_cost", {"financing_cost": financing_cost + bump}),
+    ):
+        arguments = {
+            "mu_geometric": mu_geometric,
+            "volatility": volatility,
+            "financing_cost": financing_cost,
+        }
+        arguments.update(kwargs)
+        bumped = empirical_optimal_leverage(
+            returns,
+            arguments["financing_cost"],
+            arguments["mu_geometric"],
+            volatility=arguments["volatility"],
+            grid=grid,
+        )["empirical_leverage"]
+        rows.append(
+            {
+                "input": name,
+                "bump": bump,
+                "leverage": bumped,
+                "change": bumped - base,
+                "leverage_per_unit": (bumped - base) / bump,
+            }
+        )
+    table = pd.DataFrame(rows).set_index("input")
+    table.attrs["base_leverage"] = base
+    return table
+
+
+def exposure_drift(
+    returns: pd.DataFrame,
+    weight_qld: float,
+    rebalance: str = "ME",
+) -> dict[str, float]:
+    """How far realised exposure wanders from its target between rebalances.
+
+    Sets an upper bound on the precision worth quoting, independent of any
+    estimation question: a target that cannot be held to a given number of
+    decimals cannot be acted on to that many either. Between monthly
+    rebalances the two legs compound at different rates, so realised exposure
+    occupies a band around ``1 + weight_qld`` rather than sitting on it.
+    """
+    from .backtest import _rebalance_flags
+
+    frame = returns[["QQQ", "QLD"]].dropna()
+    target = np.array([1.0 - weight_qld, weight_qld])
+    flags = _rebalance_flags(frame.index, rebalance)
+    values = target.copy()
+    realised = np.empty(len(frame))
+    for position, row in enumerate(frame.to_numpy()):
+        if flags[position] and position > 0:
+            values = values.sum() * target
+        values = values * (1.0 + row)
+        realised[position] = 1.0 + values[1] / values.sum()
+    return {
+        "target_exposure": 1.0 + weight_qld,
+        "minimum": float(realised.min()),
+        "maximum": float(realised.max()),
+        "std": float(realised.std(ddof=1)),
+        "typical_band": float(2.0 * realised.std(ddof=1)),
+    }

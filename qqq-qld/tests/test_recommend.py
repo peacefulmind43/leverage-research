@@ -9,8 +9,10 @@ from qqq_qld.recommend import (
     breakeven_table,
     credible_range,
     empirical_optimal_leverage,
+    exposure_drift,
     horizon_optimal_leverage,
     horizon_stability,
+    input_sensitivity,
     optimal_leverage,
     required_return,
     sensitivity_box,
@@ -297,3 +299,37 @@ def test_closed_form_is_biased_high_against_discrete_rebalancing():
     )
     assert empirical["empirical_leverage"] < analytic["unconstrained_leverage"]
     assert analytic["unconstrained_leverage"] - empirical["empirical_leverage"] < 0.25
+
+
+def test_third_decimal_is_below_the_input_resolution():
+    """The claim that a three-decimal leverage figure is noise.
+
+    A tenth of a percentage point on the forward return -- far finer than it can
+    be forecast -- must move the optimum by more than 0.001, which is what makes
+    the third decimal uninformative however reproducibly it is computed.
+    """
+    series = _fat_tailed_series(days=6000)
+    table = input_sensitivity(
+        series, FINANCING, 0.095, 0.235, bump=0.001, grid=np.arange(0.8, 2.01, 0.001)
+    )
+    assert abs(table.loc["mu_geometric", "change"]) > 0.001
+    # The optimum depends only on the spread between return and financing cost,
+    # so their derivatives are equal and opposite, both 1/sigma^2. The return
+    # dominates the *uncertainty* because it is known far less precisely -- not
+    # because the answer is more sensitive to it. Asserting the symmetry keeps
+    # that distinction from being quietly reintroduced as a sensitivity claim.
+    per_unit_mu = table.loc["mu_geometric", "leverage_per_unit"]
+    per_unit_cost = table.loc["financing_cost", "leverage_per_unit"]
+    assert np.isclose(per_unit_mu, -per_unit_cost, rtol=0.1)
+    assert abs(per_unit_mu) > 1.0
+
+
+def test_exposure_drift_bounds_the_precision_worth_quoting():
+    """A target that cannot be held to three decimals cannot be acted on to three."""
+    index = pd.bdate_range("2010-01-04", periods=2520)
+    rng = np.random.default_rng(4)
+    underlying = pd.Series(rng.normal(0.0004, 0.012, len(index)), index=index)
+    frame = pd.DataFrame({"QQQ": underlying, "QLD": 2 * underlying - 0.05 / 252})
+    drift = exposure_drift(frame, 0.23)
+    assert drift["minimum"] < drift["target_exposure"] < drift["maximum"]
+    assert drift["typical_band"] > 0.001
