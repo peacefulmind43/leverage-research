@@ -365,28 +365,32 @@ def test_band_costs_move_in_opposite_directions():
     assert 0.0 < table.loc[0.0, "drift_cost"] < 1e-6
 
 
-def test_tax_widens_the_optimal_band_by_an_order_of_magnitude():
-    """The finding: account type dominates this decision.
+def test_higher_trading_cost_widens_the_optimal_band():
+    """The direction the tradeoff moves, which is what makes it a tradeoff.
 
-    Drift cost is second order and tiny; realising gains is first order and
-    large. A sheltered account should hold a tight band because it is nearly
-    free to; a taxable one should not.
+    Drift cost does not depend on what trading costs, so raising the trading
+    cost can only push the minimum wider.
     """
     frame = _blend_frame()
-    sheltered = optimal_band(frame, 0.235, 0.235**2)
-    taxable = optimal_band(
-        frame, 0.235, 0.235**2, tax_rate=0.25, embedded_gain_fraction=0.60
-    )
-    assert taxable["total_cost"].idxmin() > sheltered["total_cost"].idxmin() * 2
-    # Compared at a band where both actually trade, tax dominates by orders of
-    # magnitude. (Comparing curve extremes would not show this: the widest bands
-    # never trade, so they pay no tax in either column.)
-    tight = 0.01
-    assert taxable.loc[tight, "total_cost"] > 50 * sheltered.loc[tight, "total_cost"]
+    cheap = optimal_band(frame, 0.235, 0.235**2, transaction_cost_bps=1.0)
+    dear = optimal_band(frame, 0.235, 0.235**2, transaction_cost_bps=50.0)
+    assert dear["total_cost"].idxmin() >= cheap["total_cost"].idxmin()
+    pd.testing.assert_series_equal(cheap["drift_cost"], dear["drift_cost"])
+
+
+def test_the_band_minimum_is_shallow():
+    """Why the guidance is 'set it once' rather than a tuned number.
+
+    Between one and eight points of weight the total cost is a rounding error at
+    an ETF's trading cost, so precision in the band is not worth pursuing --
+    only the existence of one is.
+    """
+    table = optimal_band(_blend_frame(), 0.235, 0.235**2)
+    shallow = table.loc[[0.01, 0.02, 0.03, 0.04, 0.05, 0.08], "total_cost"]
+    assert shallow.max() < 1e-4
+    assert shallow.max() < 3 * shallow.min()
 
 
 def test_daily_rebalancing_is_never_optimal_once_trading_costs_anything():
-    frame = _blend_frame()
-    for kwargs in ({}, {"tax_rate": 0.25, "embedded_gain_fraction": 0.60}):
-        table = optimal_band(frame, 0.235, 0.235**2, **kwargs)
-        assert table["total_cost"].idxmin() > 0.0
+    table = optimal_band(_blend_frame(), 0.235, 0.235**2)
+    assert table["total_cost"].idxmin() > 0.0

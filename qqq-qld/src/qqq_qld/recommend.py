@@ -559,8 +559,6 @@ def optimal_band(
     sigma2: float,
     bands: tuple[float, ...] = (0.0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.08, 0.12, 0.20, 0.30),
     transaction_cost_bps: float = 2.0,
-    tax_rate: float = 0.0,
-    embedded_gain_fraction: float = 0.0,
 ) -> pd.DataFrame:
     """No-trade band width that minimises the total cost of holding a target.
 
@@ -573,10 +571,13 @@ def optimal_band(
     of small deviations.
 
     That asymmetry -- first-order trading cost against second-order drift cost --
-    is why the answer is a band and not a date, and why the band widens sharply
-    once trading carries tax. In a sheltered account the whole curve is a
-    rounding error and the minimum is shallow; in a taxable one the tax term
-    dominates every other consideration by an order of magnitude.
+    is why the answer is a band rather than a date. At an ETF's trading cost both
+    terms are small enough that the minimum is shallow: the total is a rounding
+    error anywhere between roughly one and eight points of weight, so the band is
+    worth setting once and not worth tuning. It matters much more that some band
+    exists than exactly how wide it is -- daily rebalancing pays the most to
+    trade and never wins, and a band wide enough to never bind stops controlling
+    exposure at all.
 
     **Growth is deliberately not the objective here.** Backtested growth by band
     is confounded: a wider band lets exposure drift up in a rising market, and on
@@ -598,8 +599,6 @@ def optimal_band(
             weight_qld,
             band,
             transaction_cost_bps=transaction_cost_bps,
-            tax_rate=tax_rate,
-            embedded_gain_fraction=embedded_gain_fraction,
         )
         values = target.copy()
         squared = np.empty(len(asset_returns))

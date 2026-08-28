@@ -43,9 +43,10 @@ assumptions edits the instructions. In short:
    estimate is a default, not a finding.
 3. **Cap it at about 1.3x.** Past there, median wealth falls *and* the tail worsens. This holds
    across the whole input range, unlike the exact figure below it.
-4. **Set the rebalancing band by account type:** ±3 points of QLD weight in a sheltered account,
-   ±20 or wider in a taxable one — and if you are still contributing, rebalance with new money
-   instead, which costs no realised gain at all.
+4. **Rebalance on a band, not a date:** about ±3 points of QLD weight. Trading cost falls with
+   the reciprocal of the band and drift cost rises with its square, so the total is flat from
+   roughly ±1 to ±8 points — set it once, don't tune it. New contributions can do the same job
+   with no turnover.
 5. **Re-run when rates move.** One point on the financing rate is worth about 0.18x of leverage.
 
 And price the path first: through 2000-2002 this allocation drew down **90%**, needing an 890% gain

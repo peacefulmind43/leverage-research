@@ -71,18 +71,16 @@ def _operating_section(extras: dict[str, object] | None) -> list[str]:
         "moving anywhere within 1.0x-1.3x changes median 30-year wealth by around 0.1% a year, "
         "which is inside the error of the assumption that produced it.",
         "",
-        "**4. Set the rebalancing band by account type, and mind the tax.**",
-        "",
-        "- *Sheltered account:* a band of about **±3 percentage points** of QLD weight, so "
-        f"roughly {max(weight - 0.03, 0):.0%}-{weight + 0.03:.0%} QLD. Costs about 0.002% a year "
-        "and trades once or twice a year.",
-        "- *Taxable account:* **±20 points, or wider.** Realising gains costs two to three orders "
-        "of magnitude more than an ETF spread, and drifting away from target costs almost "
-        "nothing by comparison -- it is a second-order penalty. A ±1 point band in a taxable "
-        "account burns roughly 2% a year, which is more than ten times what the leverage earns.",
-        "- *Better than either, if you are still contributing:* rebalance with new money. "
-        "Directing contributions to whichever leg is light gets you exposure control with no "
-        "realised gain at all, and dominates any choice of band.",
+        "**4. Rebalance on a band, not a date.** A band of about **±3 percentage points** of "
+        f"QLD weight -- roughly {max(weight - 0.03, 0):.0%} to {weight + 0.03:.0%} QLD -- costs "
+        "around 0.002% a year and trades once or twice a year. Trading cost falls with the "
+        "reciprocal of the band while the penalty for drifting off target rises with its square, "
+        "and at an ETF's trading cost both are small enough that the total is a rounding error "
+        "anywhere from about one to eight points. So set it once and do not tune it: what matters "
+        "is that a band exists at all. Calendar rebalancing trades whether or not the portfolio "
+        "has drifted, and leaves it alone the day after when it has; a band trades on the thing "
+        "you are actually trying to control. If you are still contributing, directing new money "
+        "to whichever leg is light does the same job with no turnover.",
         "",
         "**5. Re-run this when rates move.** The financing cost is the one input that is both "
         "knowable and moving. Update `costs.benchmark_rate` and, for a multi-decade holding "
