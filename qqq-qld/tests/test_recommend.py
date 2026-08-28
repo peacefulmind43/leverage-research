@@ -13,6 +13,7 @@ from qqq_qld.recommend import (
     horizon_optimal_leverage,
     horizon_stability,
     input_sensitivity,
+    optimal_band,
     optimal_leverage,
     required_return,
     sensitivity_box,
@@ -333,3 +334,59 @@ def test_exposure_drift_bounds_the_precision_worth_quoting():
     drift = exposure_drift(frame, 0.23)
     assert drift["minimum"] < drift["target_exposure"] < drift["maximum"]
     assert drift["typical_band"] > 0.001
+
+
+def _blend_frame(days=5040, seed=11):
+    index = pd.bdate_range("2000-01-03", periods=days)
+    rng = np.random.default_rng(seed)
+    qqq = pd.Series(rng.normal(0.00038, 0.0148, days), index=index)
+    return pd.DataFrame({"QQQ": qqq, "QLD": 2 * qqq - 0.0501 / 252})
+
+
+def test_band_costs_move_in_opposite_directions():
+    """The tradeoff the band resolves, asserted in both directions.
+
+    Trading cost falls with the band because turnover does, and drift cost rises
+    with its square -- but only while the band actually binds. Once it is wide
+    enough that no trade ever triggers, every wider band is the same
+    never-rebalance policy and drift plateaus rather than continuing to rise, so
+    the monotonicity is only asserted over the binding range.
+    """
+    table = optimal_band(_blend_frame(), 0.235, 0.235**2)
+    assert table["trades_per_year"].is_monotonic_decreasing
+    binding = table[table["trades_per_year"] > 0]
+    assert binding["drift_cost"].is_monotonic_increasing
+    # Daily rebalancing pays the most to trade and the least to drift -- but not
+    # zero: the deviation is tested before the day's return is applied, so one
+    # day of intraday drift always remains. Anything else would mean the policy
+    # was reacting to a move before it happened.
+    assert table["trading_cost"].idxmax() == 0.0
+    assert table["drift_cost"].idxmin() == 0.0
+    assert 0.0 < table.loc[0.0, "drift_cost"] < 1e-6
+
+
+def test_tax_widens_the_optimal_band_by_an_order_of_magnitude():
+    """The finding: account type dominates this decision.
+
+    Drift cost is second order and tiny; realising gains is first order and
+    large. A sheltered account should hold a tight band because it is nearly
+    free to; a taxable one should not.
+    """
+    frame = _blend_frame()
+    sheltered = optimal_band(frame, 0.235, 0.235**2)
+    taxable = optimal_band(
+        frame, 0.235, 0.235**2, tax_rate=0.25, embedded_gain_fraction=0.60
+    )
+    assert taxable["total_cost"].idxmin() > sheltered["total_cost"].idxmin() * 2
+    # Compared at a band where both actually trade, tax dominates by orders of
+    # magnitude. (Comparing curve extremes would not show this: the widest bands
+    # never trade, so they pay no tax in either column.)
+    tight = 0.01
+    assert taxable.loc[tight, "total_cost"] > 50 * sheltered.loc[tight, "total_cost"]
+
+
+def test_daily_rebalancing_is_never_optimal_once_trading_costs_anything():
+    frame = _blend_frame()
+    for kwargs in ({}, {"tax_rate": 0.25, "embedded_gain_fraction": 0.60}):
+        table = optimal_band(frame, 0.235, 0.235**2, **kwargs)
+        assert table["total_cost"].idxmin() > 0.0

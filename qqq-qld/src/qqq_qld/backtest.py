@@ -67,3 +67,76 @@ def portfolio_returns(*args, **kwargs) -> pd.Series:
     out = nav.pct_change(fill_method=None)
     out.iloc[0] = first_return
     return out
+
+
+def threshold_backtest(
+    returns: pd.DataFrame,
+    weight_qld: float,
+    band: float,
+    transaction_cost_bps: float = 0.0,
+    tax_rate: float = 0.0,
+    embedded_gain_fraction: float = 0.0,
+    initial_value: float = 1.0,
+    band_down: float | None = None,
+) -> tuple[pd.Series, dict[str, float]]:
+    """Rebalance only when the QLD weight leaves a band around its target.
+
+    Calendar rebalancing trades on a date whether or not the portfolio has
+    drifted, and leaves it undisturbed when it has drifted badly the day after a
+    rebalance. A band trades on the thing that actually matters -- distance from
+    the target exposure -- so it does strictly less work for the same control.
+
+    ``band`` is the half-width in weight terms: with a 23% target and a band of
+    0.03, the no-trade region is 20% to 26% QLD, i.e. an exposure range of 1.20x
+    to 1.26x. ``band_down`` sets a different half-width below the target, which
+    is worth having because the two directions are not symmetric in cost: the
+    weight only rises when the market has risen, so trading it back down sells a
+    gain, whereas it falls when the market has fallen, and trading it back up
+    may sell a loss.
+
+    Costs are charged on one-way turnover, and the tax term is what makes this
+    decision interesting outside a sheltered account. Rebalancing a blend
+    always requires selling one leg, so it realises gains; the effective cost
+    per unit of turnover is ``tax_rate * embedded_gain_fraction``, which at
+    plausible values is two to three orders of magnitude larger than an ETF
+    spread. Set both to zero for a tax-sheltered account.
+
+    Returns the NAV series and a summary of how much trading the policy did.
+    """
+    if not 0 <= weight_qld <= 1:
+        raise ValueError("weight_qld must be between 0 and 1")
+    if band < 0:
+        raise ValueError("band must be non-negative")
+    if not {"QQQ", "QLD"}.issubset(returns.columns):
+        raise ValueError("returns must contain QQQ and QLD columns")
+
+    target = np.array([1.0 - weight_qld, weight_qld], dtype=float)
+    asset_returns = returns[["QQQ", "QLD"]].to_numpy(dtype=float)
+    cost_rate = transaction_cost_bps / 10_000.0 + tax_rate * embedded_gain_fraction
+    values = target * float(initial_value)
+    nav = np.empty(len(returns))
+    trades = 0
+    turnover_total = 0.0
+
+    for position, daily in enumerate(asset_returns):
+        total = values.sum()
+        deviation = values[1] / total - weight_qld
+        limit = band if deviation >= 0 else (band if band_down is None else band_down)
+        if position > 0 and abs(deviation) > limit:
+            turnover = 0.5 * np.abs(target - values / total).sum()
+            total *= 1.0 - turnover * cost_rate
+            values = target * total
+            trades += 1
+            turnover_total += turnover
+        values = values * (1.0 + daily)
+        nav[position] = values.sum()
+
+    years = len(returns) / 252
+    series = pd.Series(nav, index=returns.index, name=f"QLD {weight_qld:.0%} band {band:.0%}")
+    return series, {
+        "band": band,
+        "trades": trades,
+        "trades_per_year": trades / years,
+        "annual_turnover": turnover_total / years,
+        "annual_cost": turnover_total * cost_rate / years,
+    }

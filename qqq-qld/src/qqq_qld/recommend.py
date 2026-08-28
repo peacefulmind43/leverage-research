@@ -551,3 +551,74 @@ def exposure_drift(
         "std": float(realised.std(ddof=1)),
         "typical_band": float(2.0 * realised.std(ddof=1)),
     }
+
+
+def optimal_band(
+    returns: pd.DataFrame,
+    weight_qld: float,
+    sigma2: float,
+    bands: tuple[float, ...] = (0.0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.08, 0.12, 0.20, 0.30),
+    transaction_cost_bps: float = 2.0,
+    tax_rate: float = 0.0,
+    embedded_gain_fraction: float = 0.0,
+) -> pd.DataFrame:
+    """No-trade band width that minimises the total cost of holding a target.
+
+    Two costs move in opposite directions with the band, and both are small
+    enough that the comparison has to be done in the same units rather than
+    argued about. Trading cost falls roughly with the reciprocal of the band,
+    because annual turnover does. Drift cost rises with its square: the growth
+    penalty for sitting at leverage ``L`` instead of the optimum is
+    ``0.5*sigma^2*(L-L*)^2``, which is second order and therefore very forgiving
+    of small deviations.
+
+    That asymmetry -- first-order trading cost against second-order drift cost --
+    is why the answer is a band and not a date, and why the band widens sharply
+    once trading carries tax. In a sheltered account the whole curve is a
+    rounding error and the minimum is shallow; in a taxable one the tax term
+    dominates every other consideration by an order of magnitude.
+
+    **Growth is deliberately not the objective here.** Backtested growth by band
+    is confounded: a wider band lets exposure drift up in a rising market, and on
+    a sample whose realised return exceeded the assumed forward return that
+    drift is rewarded, making wide bands look good for reasons that have nothing
+    to do with rebalancing. Shuffling the return sequence removes most of the
+    apparent advantage, which identifies it as momentum in the realised path
+    rather than a property of the policy. Cost minimisation is not exposed to
+    that confound.
+    """
+    from .backtest import threshold_backtest
+
+    target = np.array([1.0 - weight_qld, weight_qld])
+    asset_returns = returns[["QQQ", "QLD"]].dropna().to_numpy(dtype=float)
+    rows = []
+    for band in bands:
+        _, stats = threshold_backtest(
+            returns,
+            weight_qld,
+            band,
+            transaction_cost_bps=transaction_cost_bps,
+            tax_rate=tax_rate,
+            embedded_gain_fraction=embedded_gain_fraction,
+        )
+        values = target.copy()
+        squared = np.empty(len(asset_returns))
+        for position, row in enumerate(asset_returns):
+            total = values.sum()
+            if position > 0 and abs(values[1] / total - weight_qld) > band:
+                values = target * total
+            values = values * (1.0 + row)
+            squared[position] = (values[1] / values.sum() - weight_qld) ** 2
+        drift = 0.5 * sigma2 * float(squared.mean())
+        rows.append(
+            {
+                "band": band,
+                "exposure_low": 1.0 + weight_qld - band,
+                "exposure_high": 1.0 + weight_qld + band,
+                "trades_per_year": stats["trades_per_year"],
+                "trading_cost": stats["annual_cost"],
+                "drift_cost": drift,
+                "total_cost": stats["annual_cost"] + drift,
+            }
+        )
+    return pd.DataFrame(rows).set_index("band")
