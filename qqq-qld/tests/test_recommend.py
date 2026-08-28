@@ -7,6 +7,7 @@ import pytest
 from qqq_qld.recommend import (
     HOUSE_VIEW,
     breakeven_table,
+    credible_range,
     empirical_optimal_leverage,
     horizon_optimal_leverage,
     horizon_stability,
@@ -118,11 +119,18 @@ def test_stacking_conservative_inputs_lands_on_a_corner_not_a_centre():
     central estimate but an extreme one.
     """
     box = sensitivity_box()
+    # The most conservative value of every input at once: highest volatility,
+    # highest financing cost, lowest assumed return.
     corner = optimal_leverage(
-        0.2567**2, 0.0541, mu_geometric=0.09, risk_aversion=1.0, min_leverage=0.0
+        0.2567**2, 0.0541, mu_geometric=0.08, risk_aversion=1.0, min_leverage=0.0
     )["unconstrained_leverage"]
     assert np.isclose(corner, box["leverage"].min(), atol=0.01)
     assert box["leverage"].median() > corner + 0.25
+
+    # The revision this repository actually made is central rather than a corner,
+    # which is the check that it recentred instead of over-correcting.
+    published = optimal_leverage(0.235**2, 0.0501, min_leverage=0.0)
+    assert corner < published["unconstrained_leverage"] < box["leverage"].max()
 
 
 def test_rescaling_preserves_shape_while_retargeting_scale():
@@ -247,3 +255,45 @@ def test_horizon_index_supports_exact_lookups():
     )
     assert 1.0 in table.index
     assert table.loc[1.0, "prob_beats_unlevered"] == 0.0
+
+
+def test_credible_range_spans_more_than_the_point_estimate_suggests():
+    """The range is the finding. If it ever narrows, the claim must be restated."""
+    band = credible_range(point_estimate=1.23)
+    assert band["minimum"] < 1.0 < band["maximum"]
+    assert band["ratio_max_to_min"] > 2.0
+    # The published point estimate must be central, not a corner.
+    assert 25.0 < band["percentile_of_point"] < 75.0
+
+
+def test_percentile_flags_a_corner_masquerading_as_a_correction():
+    """The specific guard against over-correcting under pushback.
+
+    A revised figure that lands near 0 or 100 has swapped one extreme for the
+    other rather than recentring, and the percentile is what reveals that.
+    """
+    box = sensitivity_box()
+    low = credible_range(box, point_estimate=float(box["leverage"].min()))
+    high = credible_range(box, point_estimate=float(box["leverage"].max()))
+    assert low["percentile_of_point"] == 0.0
+    assert high["percentile_of_point"] > 95.0
+
+
+def test_closed_form_is_biased_high_against_discrete_rebalancing():
+    """The continuous-time formula is the approximation, not the truth.
+
+    Verified on lognormal returns where the analytic answer is exact by
+    construction: daily discrete rebalancing still gives up roughly a tenth of a
+    turn of leverage against it, so the gap on real data is not evidence of a
+    bug and the two should not be expected to agree exactly.
+    """
+    rng = np.random.default_rng(0)
+    mu_geometric, sigma, cost = 0.12, 0.20, 0.04
+    daily = np.log1p(mu_geometric) / 252 + sigma / np.sqrt(252) * rng.standard_normal(252 * 4000)
+    series = pd.Series(np.expm1(daily))
+    empirical = empirical_optimal_leverage(series, cost, grid=np.arange(0.0, 4.01, 0.01))
+    analytic = optimal_leverage(
+        sigma**2, cost, mu_geometric=mu_geometric, risk_aversion=1.0, min_leverage=0.0
+    )
+    assert empirical["empirical_leverage"] < analytic["unconstrained_leverage"]
+    assert analytic["unconstrained_leverage"] - empirical["empirical_leverage"] < 0.25

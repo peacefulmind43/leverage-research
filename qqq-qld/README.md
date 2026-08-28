@@ -14,12 +14,40 @@ contains the 1987 crash and the 2000-2002 unwind rather than beginning after the
 Full output lives in [`results/summary.md`](results/summary.md); the math and assumptions are in
 [`docs/methodology.md`](docs/methodology.md).
 
-## The number
+## The number: 0.89x to 1.92x, point estimate 1.23x
 
-**1.23x — about 23% QLD / 77% QQQ.** Full Kelly, `gamma = 1`: the objective that maximises wealth
-and nothing else, since Kelly's dominance is a theorem rather than a preference. (True risk
-*neutrality* is `gamma = 0`, which prescribes unbounded leverage and certain ruin, so "only cares
-about money" has to mean maximising the growth rate, not expected wealth.)
+**The range is the finding. The point estimate is not, and should not be relied on as one.** The
+recommendation is a deterministic function of four inputs, one of which — the forward return —
+cannot be estimated from any quantity of history. Across 45 combinations of values that are each
+individually defensible, the answer spans a factor of 2.2. The point estimate sits at the 42nd
+percentile of that region, which is reported because an earlier revision of this repository sat at
+the extreme low corner and called it a recommendation; landing near the middle is the check that a
+correction has recentred rather than swapped one extreme for the other.
+
+Within that framing: **1.23x — about 23% QLD / 77% QQQ** — at full Kelly, `gamma = 1`, the
+objective that maximises wealth and nothing else, since Kelly's dominance is a theorem rather than
+a preference. (True risk *neutrality* is `gamma = 0`, which prescribes unbounded leverage and
+certain ruin, so "only cares about money" has to mean maximising the growth rate, not expected
+wealth.)
+
+### What is measured and what is asserted
+
+Confidence in the parts of this analysis is very unequal, and the parts are separable:
+
+| Claim | Basis | Confidence |
+|---|---|---|
+| QLD's all-in borrowing rate ≈ benchmark + 1.71% | identified two independent ways from fund returns, agreeing to 0.001% | high |
+| Reward-to-risk ratios cannot select leverage | algebraic identity; verified strictly monotone | high |
+| Financing belongs in the Kelly numerator | algebra; omitting it inflated `L*` by `c/sigma^2` | high |
+| A 1.3x blend drew down -91.5% through 2000-2002 | measured on a reconstruction validated to 0.2pp on drawdown | high |
+| Median gain from 1x to the optimum ≈ 0.12%/yr | bootstrapped; robust across seeds and inputs | high |
+| Forward volatility is 23.5% rather than 22.3% or 25.67% | a judgement about regime recurrence | low |
+| Forward geometric return is 9.5% | an assumption; no method here estimates it | very low |
+| Therefore `L*` = 1.23x | inherits the two rows above | **low** |
+
+The closed form is also biased about 0.1x high against daily rebalancing — verified on lognormal
+returns where the analytic answer is exact by construction — which is why the headline comes from
+the realised-path estimator rather than the formula.
 
 | Estimator | What it adds | Leverage |
 |---|---|---:|

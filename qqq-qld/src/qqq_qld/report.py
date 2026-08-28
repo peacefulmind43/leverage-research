@@ -36,8 +36,31 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
     # assumption, and the bootstrap's argmax moves with the resampling seed.
     headline = rec.get("empirical", rec["recommended_leverage"])
     horizon = rec.get("horizon") or {}
+    band = rec.get("credible_range") or (extras or {}).get("credible_range") or {}
     lines = [
-        f"## Recommended leverage: **{headline:.2f}x** ({headline - 1:.0%} QLD)",
+        (
+            f"## Recommended leverage: **{band['minimum']:.2f}x to {band['maximum']:.2f}x**, "
+            f"point estimate {headline:.2f}x"
+            if band
+            else f"## Recommended leverage: **{headline:.2f}x**"
+        ),
+        "",
+        (
+            "**The range is the finding; the point estimate is not.** The recommendation is a "
+            "deterministic function of four inputs, one of which -- the forward return -- cannot "
+            "be estimated from any quantity of history. Across values of those inputs that are "
+            f"each individually defensible ({band.get('cells', 0)} combinations) the answer spans "
+            f"a factor of {band.get('ratio_max_to_min', float('nan')):.1f}. Quoting the middle of "
+            "that interval without the interval overstates what this analysis knows.\n\n"
+            "The point estimate below sits at the "
+            f"{band.get('percentile_of_point', float('nan')):.0f}th percentile of that region, "
+            "which is reported for a specific reason: an earlier "
+            "revision of this repository sat at the extreme low corner, and the check that a "
+            "correction has recentred rather than merely jumped to the opposite corner is that it "
+            "lands near the middle."
+            if band
+            else ""
+        ),
         "",
         "Three estimators of the same quantity, in increasing order of realism. They agree, "
         "which is the check that the headline is not an artefact of the lognormal assumption:",

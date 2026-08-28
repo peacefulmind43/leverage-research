@@ -78,7 +78,11 @@ The practical appeal of QQQ plus QLD is that two liquid ETFs can continuously ad
 However, the funds track the same index and do not diversify across asset classes. QLD resets daily, so long-horizon results depend on path, volatility, financing, fees, and tracking error.
 The table reports estimates for this historical window and these assumptions. It is not a forecast, a guarantee, or personalized investment advice.
 
-## Recommended leverage: **1.23x** (23% QLD)
+## Recommended leverage: **0.89x to 1.92x**, point estimate 1.23x
+
+**The range is the finding; the point estimate is not.** The recommendation is a deterministic function of four inputs, one of which -- the forward return -- cannot be estimated from any quantity of history. Across values of those inputs that are each individually defensible (45 combinations) the answer spans a factor of 2.2. Quoting the middle of that interval without the interval overstates what this analysis knows.
+
+The point estimate below sits at the 42th percentile of that region, which is reported for a specific reason: an earlier revision of this repository sat at the extreme low corner, and the check that a correction has recentred rather than merely jumped to the opposite corner is that it lands near the middle.
 
 Three estimators of the same quantity, in increasing order of realism. They agree, which is the check that the headline is not an artefact of the lognormal assumption:
 

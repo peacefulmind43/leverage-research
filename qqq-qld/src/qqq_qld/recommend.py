@@ -313,9 +313,9 @@ def horizon_optimal_leverage(
 
 
 def sensitivity_box(
-    mu_geometric: tuple[float, ...] = (0.09, 0.10, 0.12),
+    mu_geometric: tuple[float, ...] = (0.08, 0.09, 0.095, 0.10, 0.12),
     volatility: tuple[float, ...] = (0.223, 0.235, 0.2567),
-    financing_cost: tuple[float, ...] = (0.0493, 0.0541),
+    financing_cost: tuple[float, ...] = (0.0493, 0.0501, 0.0541),
     risk_aversion: float = 1.0,
 ) -> pd.DataFrame:
     """Growth-optimal leverage across the whole plausible input region.
@@ -415,3 +415,38 @@ def horizon_stability(
         "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
         "seeds": len(values),
     }
+
+
+def credible_range(
+    box: pd.DataFrame | None = None,
+    point_estimate: float | None = None,
+) -> dict[str, float]:
+    """The interval the inputs actually support, and where a point sits in it.
+
+    This is the honest headline, and a point estimate is not. The recommendation
+    is a deterministic function of four inputs, one of which -- the forward
+    return -- cannot be estimated from any amount of history. Across values of
+    those inputs that are all individually defensible the answer spans more than
+    a factor of two, so quoting the centre of that range without the range
+    overstates what the analysis knows by a wide margin.
+
+    ``percentile_of_point`` guards specifically against over-correction: after
+    an input choice is revised, it says whether the new figure is central or has
+    merely moved to the opposite corner. A revision that lands near 50 is a
+    recentring; one that lands near 0 or 100 has replaced one extreme with
+    another.
+    """
+    if box is None:
+        box = sensitivity_box()
+    values = box["leverage"].to_numpy()
+    result = {
+        "minimum": float(values.min()),
+        "median": float(np.median(values)),
+        "maximum": float(values.max()),
+        "ratio_max_to_min": float(values.max() / values.min()),
+        "cells": int(values.size),
+    }
+    if point_estimate is not None:
+        result["point_estimate"] = float(point_estimate)
+        result["percentile_of_point"] = float(100.0 * np.mean(values < point_estimate))
+    return result

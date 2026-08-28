@@ -31,6 +31,7 @@ from .optimize import (
 )
 from .recommend import (
     breakeven_table,
+    credible_range,
     empirical_optimal_leverage,
     flatness,
     horizon_optimal_leverage,
@@ -262,7 +263,9 @@ def run(
     extras["recommendation"] = recommendation
     extras["horizon_table"] = horizon
     extras["flatness"] = flatness(horizon)
-    extras["sensitivity_box"] = sensitivity_box()
+    box = sensitivity_box()
+    extras["sensitivity_box"] = box
+    extras["credible_range"] = credible_range(box, recommendation["empirical"])
     extras["breakeven"] = breakeven_table(forward_sigma2, forward_cost)
 
     results_dir = root / report_cfg["results_dir"]
