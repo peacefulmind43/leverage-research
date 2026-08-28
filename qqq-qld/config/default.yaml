@@ -5,6 +5,32 @@ data:
   end: null
   cache: "work/prices.csv"
 
+# Reconstruct QQQ/QLD returns before QLD's 2006 inception from the Nasdaq-100
+# and a contemporaneous short rate, so the sample includes the 1987 crash and
+# the 2000-2002 unwind. Both free parameters are calibrated on the live overlap
+# and the fit is reported; see docs/methodology.md section 2.1. Turning this off
+# reverts every result to a window that excludes the worst outcome a leveraged
+# Nasdaq position has faced, which flatters leverage.
+extend:
+  enabled: true
+  index_ticker: "^NDX"
+  index_start: "1985-01-01"
+  risk_free_series: "DTB3"
+  index_cache: "work/index.csv"
+  risk_free_cache: "work/risk_free.csv"
+
+# QLD's cost of leverage. The swap spread is estimated from the funds' own
+# returns rather than assumed (see qqq_qld.costs); set `swap_spread` to pin it
+# to a value instead. `benchmark_rate` is the current short rate the forward
+# financing cost is built on -- update it when rates move, because Kelly
+# leverage depends on the spread between expected return and this number.
+costs:
+  expense_ratio_qqq: 0.0020
+  expense_ratio_qld: 0.0095
+  benchmark_rate: 0.0370
+  swap_spread: null        # null => estimate empirically from returns
+  estimate_window: "5YE"
+
 portfolio:
   rebalance: "ME"
   transaction_cost_bps: 2.0
@@ -13,22 +39,33 @@ portfolio:
 optimization:
   grid_step: 0.01
   annual_risk_free_rate: 0.0
+  # CRRA gamma. 1.0 is log utility (full Kelly) and is not a realistic
+  # preference for a real portfolio: it accepts drawdowns near total loss.
+  # Individual investors are usually calibrated between 2 and 4.
+  risk_aversion: 2.0
   target_volatility: 0.25
   max_drawdown_limit: -0.60
   min_train_years: 5
   test_years: 1
-  walk_forward_objective: "sharpe"
+  # Must not be a scale-invariant ratio. Sharpe/Sortino/Calmar cannot select
+  # leverage -- their argmax is the lowest-leverage grid point by construction,
+  # whatever the data says. See qqq_qld.optimize.SCALE_INVARIANT_OBJECTIVES.
+  walk_forward_objective: "log_growth"
+  bootstrap_objective: "log_growth"
   bootstrap_samples: 1000
   bootstrap_block_days: 21
   seed: 42
-  # Illustrative, user-editable forward-looking excess-return assumptions for the
-  # Kelly sensitivity table (see docs/methodology.md section 6.2). These are NOT
-  # this tool's own forecast -- they are inputs you should replace with your own
-  # view. The trailing-sample estimate is added automatically alongside these.
+  # Forward-looking assumptions for the Kelly sensitivity table. These are
+  # **geometric** (annualised/CAGR) total returns, the convention capital-market
+  # assumptions are published in; the pipeline converts them to the arithmetic
+  # mean Kelly requires by adding 0.5*sigma^2, which is over three points at
+  # this sample's volatility. They are NOT this tool's forecast -- replace them
+  # with your own view. The trailing-sample estimate is added automatically.
   mu_scenarios:
-    "Conservative (valuation-anchored ~10y CMA, e.g. Vanguard/Research Affiliates)": 0.06
-    "Bear case (GMO-style multiple reversion)": -0.04
-    "Bull case (AI upside exceeds current consensus)": 0.12
+    "Optimistic (AI upside beyond consensus)": 0.12
+    "Neutral (historical equity premium)": 0.09
+    "Conservative (valuation-anchored ~10y CMA)": 0.06
+    "Bear (multiple reversion)": 0.03
 
 report:
   results_dir: "results"

@@ -5,9 +5,19 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
+from .costs import effective_borrow_rate, implied_financing, implied_financing_by_period
 from .data import download_prices, prices_to_returns
+from .extend import (
+    calibrate_synthetic,
+    calibration_report,
+    download_index,
+    download_risk_free,
+    extend_history,
+    stress_episodes,
+)
 from .leverage import compare_rebalance_frequencies, rebalance_drag
 from .optimize import (
     evaluate_grid,
@@ -19,6 +29,17 @@ from .optimize import (
     walk_forward,
 )
 from .report import save_figures, write_summary
+
+
+def _cached(path: Path, refresh: bool, fetch):
+    """Fetch a series once and reuse it, so reruns are deterministic and offline."""
+    if path.exists() and not refresh:
+        series = pd.read_csv(path, index_col=0, parse_dates=True).iloc[:, 0]
+        return pd.to_numeric(series, errors="coerce").dropna()
+    series = fetch()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    series.to_csv(path)
+    return series
 
 
 def run(
@@ -34,6 +55,8 @@ def run(
     portfolio_cfg = cfg["portfolio"]
     opt = cfg["optimization"]
     report_cfg = cfg["report"]
+    cost_cfg = cfg.get("costs", {})
+    extend_cfg = cfg.get("extend", {})
 
     prices = download_prices(
         data_cfg["tickers"],
@@ -43,13 +66,71 @@ def run(
         refresh=refresh,
         source=data_cfg.get("source", "yahoo"),
     )
-    returns = prices_to_returns(prices)
+    live_returns = prices_to_returns(prices)
+
+    expense_kwargs = {
+        "expense_ratio_qqq": cost_cfg.get("expense_ratio_qqq", 0.0020),
+        "expense_ratio_qld": cost_cfg.get("expense_ratio_qld", 0.0095),
+    }
+    risk_free = _cached(
+        root / extend_cfg.get("risk_free_cache", "work/risk_free.csv"),
+        refresh,
+        lambda: download_risk_free(extend_cfg.get("risk_free_series", "DTB3")),
+    )
+
+    # QLD's swap spread, recovered from the live funds only -- reconstructed
+    # returns are built *using* this number, so including them would be circular.
+    financing = implied_financing(live_returns, risk_free, **expense_kwargs)
+    swap_spread = cost_cfg.get("swap_spread")
+    if swap_spread is None:
+        swap_spread = financing["implied_spread"]
+    costs = effective_borrow_rate(
+        cost_cfg.get("benchmark_rate", 0.0370), swap_spread, **expense_kwargs
+    )
+    cost_windows = implied_financing_by_period(
+        live_returns, risk_free, freq=cost_cfg.get("estimate_window", "5YE"), **expense_kwargs
+    )
+
+    returns = live_returns
+    extras: dict[str, object] = {"costs": costs, "cost_windows": cost_windows}
+    window_note = (
+        "> The sample covers QLD's live history only, which begins after the 2000-2002 "
+        "unwind -- the worst outcome a leveraged Nasdaq position has faced."
+    )
+    if extend_cfg.get("enabled", False):
+        index = _cached(
+            root / extend_cfg.get("index_cache", "work/index.csv"),
+            refresh,
+            lambda: download_index(
+                extend_cfg.get("index_ticker", "^NDX"),
+                extend_cfg.get("index_start", "1985-01-01"),
+            ),
+        )
+        index_returns = index.pct_change(fill_method=None).dropna()
+        calibration = calibrate_synthetic(live_returns, index_returns, risk_free, **expense_kwargs)
+        extras["calibration_report"] = calibration_report(
+            live_returns, index_returns, risk_free, calibration, **expense_kwargs
+        )
+        returns, meta = extend_history(
+            live_returns, index_returns, risk_free, calibration, **expense_kwargs
+        )
+        extras["calibration"] = meta
+        window_note = (
+            f"> Returns before {meta['splice_date']} are reconstructed from "
+            f"{extend_cfg.get('index_ticker', '^NDX')} and a contemporaneous short rate, so the "
+            "sample spans the 1987 crash and the 2000-2002 unwind; live fund returns are used "
+            "from that date on. See the reconstruction fit below."
+        )
+    extras["window_note"] = window_note
+    extras["stress"] = stress_episodes(returns)
+
+    risk_aversion = opt.get("risk_aversion", 1.0)
     common = dict(
         rebalance=portfolio_cfg["rebalance"],
         transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
         annual_risk_free_rate=opt["annual_risk_free_rate"],
     )
-    grid = evaluate_grid(returns, step=opt["grid_step"], **common)
+    grid = evaluate_grid(returns, step=opt["grid_step"], risk_aversion=risk_aversion, **common)
     selected = select_optima(grid, opt["target_volatility"], opt["max_drawdown_limit"])
     walk_table, walk_returns = walk_forward(
         returns,
@@ -57,6 +138,7 @@ def run(
         test_years=opt["test_years"],
         objective=opt["walk_forward_objective"],
         step=opt["grid_step"],
+        risk_aversion=risk_aversion,
         **common,
     )
     if samples is not None:
@@ -69,34 +151,49 @@ def run(
         returns,
         samples=sample_count,
         block_days=opt["bootstrap_block_days"],
-        objective="sharpe",
+        objective=opt.get("bootstrap_objective", "log_growth"),
         step=opt["grid_step"],
         seed=opt["seed"],
+        risk_aversion=risk_aversion,
         **common,
     )
     kelly = kelly_optimal_leverage(
-        returns, asset="QQQ", annual_risk_free_rate=opt["annual_risk_free_rate"]
+        returns,
+        asset="QQQ",
+        financing_cost=costs["effective_rate"],
+        risk_aversion=1.0,
+    )
+    extras["kelly_risk_adjusted"] = kelly_optimal_leverage(
+        returns,
+        asset="QQQ",
+        financing_cost=costs["effective_rate"],
+        risk_aversion=risk_aversion,
     )
     kelly_weight = kelly_implied_qld_weight(kelly)
-    half_kelly_weight = kelly_implied_qld_weight({"full_kelly": kelly["half_kelly"]})
-    max_sharpe_weight = float(selected["max_sharpe"].name)
+    reference_weight = max(kelly_implied_qld_weight({"full_kelly": kelly["half_kelly"]}), 0.30)
     drag_rows = {
-        "Half-Kelly": rebalance_drag(returns, half_kelly_weight, **common),
-        "Max-Sharpe (grid)": rebalance_drag(returns, max_sharpe_weight, **common),
+        "Kelly-implied": rebalance_drag(returns, kelly_weight, **common),
+        "Reference 30% QLD": rebalance_drag(returns, 0.30, **common),
     }
-    # Fixed at the half-Kelly weight rather than max_sharpe_weight: the latter is 0% QLD
-    # on this dataset, which would make every cadence identical and hide the cadence effect.
     frequency_table = compare_rebalance_frequencies(
         returns,
-        half_kelly_weight,
+        reference_weight,
         transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
         annual_risk_free_rate=opt["annual_risk_free_rate"],
     )
+    trailing_geometric = float(
+        (1 + returns["QQQ"]).prod() ** (252 / len(returns)) - 1
+    )
     mu_scenarios = {
-        "Trailing sample (this backtest)": kelly["mu"],
+        "Trailing sample (this backtest)": trailing_geometric,
         **opt.get("mu_scenarios", {}),
     }
-    sensitivity = kelly_sensitivity(kelly["sigma2"], mu_scenarios)
+    sensitivity = kelly_sensitivity(
+        kelly["sigma2"],
+        mu_scenarios,
+        financing_cost=costs["effective_rate"],
+        risk_aversion=risk_aversion,
+    )
 
     results_dir = root / report_cfg["results_dir"]
     assets_dir = root / report_cfg["assets_dir"]
@@ -104,6 +201,8 @@ def run(
     grid.to_csv(results_dir / "weight_grid.csv")
     walk_table.to_csv(results_dir / "walk_forward.csv", index=False)
     bootstrap.to_csv(results_dir / "bootstrap_weights.csv", index=False)
+    cost_windows.to_csv(results_dir / "financing_by_period.csv")
+    extras["stress"].to_csv(results_dir / "stress_episodes.csv")
     save_figures(
         returns,
         grid,
@@ -127,6 +226,7 @@ def run(
         frequency_table,
         sensitivity,
         cfg,
+        extras=extras,
     )
     print(f"Analysis complete: {results_dir / 'summary.md'}")
 

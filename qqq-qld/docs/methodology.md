@@ -32,6 +32,31 @@ Production decisions should still be cross-checked against official fund NAV his
 total-return dataset. The backtest never subtracts published expense ratios separately because fund
 prices/NAVs are already net of fund operating expenses.
 
+### 2.1 Reconstructing pre-inception history
+
+QLD launched in June 2006. The live sample therefore begins *after* the two worst episodes a
+leveraged Nasdaq position has faced — the 1987 crash and the 2000-2002 unwind, in which the
+Nasdaq-100 fell roughly 83% peak to trough. Every drawdown estimate, and every drawdown
+*constraint* calibrated against one, was previously fitted on a window that excluded the outcome
+such constraints exist to guard against.
+
+`qqq_qld.extend` reconstructs the missing period from the Nasdaq-100 and a contemporaneous
+3-month Treasury bill, using the funds' published mechanics: QQQ is the index plus distributions
+less its expense ratio; QLD is twice the index daily, less financing on the borrowed notional and
+its own expense ratio. The two free parameters — index distribution yield and QLD's swap spread —
+are **calibrated on the twenty-year live overlap**, not assumed, and each has a closed-form
+solution because it enters its own equation additively.
+
+Calibration matches mean returns by construction, so a small CAGR gap is weak evidence. The
+reported checks that carry information are the daily-return correlation, the tracking error, and
+the maximum-drawdown comparison — the last because the drawdown table is what the reconstruction
+exists to produce. Over the overlap the reconstruction reproduces both funds' worst drawdowns to
+within about 0.2 percentage points.
+
+This remains a simulation of the *index* path, not a claim about what these tickers would have
+returned had they existed. Treat pre-2006 figures as a stress scenario built from a real price
+history, and note that `extend.enabled: false` reverts every result to the live window.
+
 ## 3. Portfolio mechanics
 
 The default strategy targets a fixed QLD weight and rebalances at month end. Between rebalances,
@@ -58,6 +83,78 @@ These are different optimization problems and are expected to produce different 
 risk-free rate defaults to zero so the result does not silently depend on a current cash yield;
 change it in `config/default.yaml` for a different assumption.
 
+### 4.1 Why Sharpe, Sortino and Calmar cannot select leverage
+
+A QQQ/QLD blend does not choose *between* assets; it chooses how much of one asset to hold. For
+that problem the reward-to-risk ratios are degenerate. Levering a single asset by \(L\) scales
+both the excess mean and the standard deviation by \(L\), so
+
+\[
+\text{Sharpe}(L)=\frac{L(\mu-r)}{L\sigma}=\text{Sharpe}(1),
+\]
+
+leaving the ratio unchanged in the frictionless case, and strictly *decreasing* in \(L\) once
+financing and fees are subtracted from the numerator but not the denominator. The argmax of such
+an objective over a leverage grid is the lowest-leverage grid point, for every dataset, with no
+dependence on the data at all.
+
+This matters because the degeneracy is invisible in the output: a walk-forward that selects the
+same minimum weight every year, and a bootstrap whose 5th and 95th percentiles coincide, both
+*look* like unusually strong and stable evidence. Earlier versions of this repository reported
+exactly that pattern as an out-of-sample finding against leverage. It was an identity.
+
+`qqq_qld.optimize.SCALE_INVARIANT_OBJECTIVES` names these objectives and the walk-forward and
+bootstrap now warn when one is passed. Selection defaults to `log_growth`; the ratio columns are
+retained for continuity and comparability, not as leverage recommendations.
+
+### 4.2 Log growth and the CRRA certainty equivalent
+
+Expected log growth is the objective Kelly maximises and is not scale-invariant: it rises with
+leverage while the drift term dominates and falls once the variance penalty takes over, so it has
+an interior optimum that genuinely depends on the data.
+
+Log growth corresponds to log utility, i.e. CRRA \(\gamma=1\), which is not a realistic
+preference for a real portfolio — on this sample it selects allocations whose historical drawdowns
+approach total loss. `qqq_qld.metrics.crra_certainty_equivalent` generalises it to
+
+\[
+\text{CE}(\gamma)=g-\tfrac12(\gamma-1)\sigma^{2},
+\]
+
+so fractional Kelly arises as the optimum under a stated risk preference rather than as an
+unexplained haircut. Half-Kelly is exactly \(\gamma=2\). Individual investors are usually
+calibrated between 2 and 4; the value is set in `config/default.yaml`.
+
+## 4.3 What QLD charges to lend
+
+A blend is a way of borrowing, so its cost is comparable to a margin rate and `qqq_qld.costs`
+estimates it rather than assuming it. Because QLD's daily objective is exactly 2x the index, its
+observed return satisfies
+
+\[
+r_{QLD}=2r_{QQQ}+\bigl(2\,\text{ER}_{QQQ}-\text{ER}_{QLD}-\text{financing}\bigr),
+\]
+
+where the \(2\,\text{ER}_{QQQ}\) term appears because doubling QQQ's *net* return
+double-counts an expense ratio QLD does not pay. Every term but the financing rate is published,
+so subtracting a contemporaneous benchmark from the residual identifies the spread QLD's swap
+counterparties charge. The slope is fixed at 2.0 rather than estimated, because the prospectus
+defines it; a free-slope regression is reported separately as a diagnostic, and a slope far from
+2.0 would mean the intercept is contaminated.
+
+Comparing the blend against margin at the same exposure gives a result that is invariant to how
+much leverage is taken:
+
+\[
+c_{\text{margin}}=c_{\text{swap}}+\bigl(\text{ER}_{QLD}-2\,\text{ER}_{QQQ}\bigr).
+\]
+
+The weight cancels, so the fee penalty per dollar borrowed — 0.55% per year at current expense
+ratios — is the same at any allocation and can be quoted as a single number. Note the estimate
+inherits any bias in the return data: distributions missing from a data source after the splice
+date depress QLD's measured return and inflate the implied spread, so period-by-period estimates
+should be read alongside `docs/methodology.md` section 2 on data provenance.
+
 ## 5. Validation against overfitting
 
 ### Walk-forward
@@ -80,17 +177,32 @@ For an idealized daily-reset leveraged exposure \(L\), a continuous-time approxi
 log growth contains a volatility penalty:
 
 \[
-g_L \approx L\mu - \frac12L^2\sigma^2 - \text{financing} - \text{fees}.
+g(L) \approx L\mu - (L-1)c - \tfrac12\gamma L^2\sigma^2,
+\qquad
+L^{*}=\frac{\mu-c}{\gamma\sigma^{2}},
 \]
+
+where \(c\) is the all-in financing cost per dollar borrowed and \(\gamma\) is CRRA risk
+aversion.
 
 Leverage raises exposure to a positive drift, but the penalty grows roughly with the square of
 leverage. Therefore an interior growth-optimal exposure can exist. Its location changes when drift,
 volatility, financing cost, valuation, or market regime changes. Historical Nasdaq performance was
 exceptionally strong and should not be treated as a known future mean.
 
-`qqq_qld.optimize.kelly_optimal_leverage` estimates the full-Kelly leverage implied by this
-approximation as \(L^*=\mu/\sigma^2\), using the sample's annualized QQQ excess arithmetic mean
-and variance, ignoring the financing and fee terms above. It also reports the conventional
+**The financing cost belongs in the numerator, and omitting it is not a conservative
+simplification.** Leverage buys \(\mu\) but pays \(c\) for it, so the quantity being levered is
+the spread \(\mu-c\). Setting \(c=0\) prices the borrowing at zero and inflates \(L^*\) by
+\(c/\sigma^2\) — on this sample, more than a full turn of leverage. Earlier versions of this
+repository did exactly that, and reported a full-Kelly figure above 3.6x as a result.
+`qqq_qld.optimize.kelly_optimal_leverage` now takes `financing_cost` explicitly; for a QQQ/QLD
+blend it should be the effective rate derived in section 4.3, and for a margin position the
+broker's quoted rate.
+
+Note also that \(\mu\) here is an *arithmetic* mean, while published capital-market assumptions
+are geometric. The two differ by \(\tfrac12\sigma^2\), which is over three percentage points at
+this sample's volatility — a large error in a numerator that is itself a difference of two
+similar-sized numbers. `kelly_sensitivity` converts geometric inputs by default. It also reports the conventional
 half-Kelly haircut (\(L^*/2\)), which is the standard practitioner response to estimation error in
 \(\mu\) and \(\sigma^2\) rather than a distinct model. Both figures are reported alongside the
 grid search in `results/summary.md`. Because \(\mu\) is estimated with much more noise than

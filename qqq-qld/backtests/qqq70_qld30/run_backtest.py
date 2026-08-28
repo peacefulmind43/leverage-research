@@ -15,7 +15,9 @@ BACKTEST_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from qqq_qld.backtest import portfolio_returns  # noqa: E402
+from qqq_qld.costs import effective_borrow_rate, implied_financing  # noqa: E402
 from qqq_qld.data import download_prices, prices_to_returns  # noqa: E402
+from qqq_qld.extend import download_risk_free  # noqa: E402
 from qqq_qld.leverage import compare_rebalance_frequencies  # noqa: E402
 from qqq_qld.metrics import drawdown, performance_metrics  # noqa: E402
 from qqq_qld.optimize import kelly_optimal_leverage, kelly_sensitivity  # noqa: E402
@@ -140,16 +142,28 @@ def _kelly_sensitivity_table(
     sigma2 is held fixed (better estimated than mu; see docs/methodology.md section
     6.2). The trailing sample estimate is added automatically alongside whatever
     scenarios are configured in config/default.yaml under optimization.mu_scenarios.
+
+    Leverage is priced at QLD's own estimated all-in borrowing rate rather than at
+    zero: this backtest holds a levered position, so the cost of that leverage is
+    part of what the Kelly comparison is meant to weigh (methodology section 4.3).
     """
-    kelly = kelly_optimal_leverage(returns, asset="QQQ", annual_risk_free_rate=risk_free_rate)
+    try:
+        spread = implied_financing(returns, download_risk_free())["implied_spread"]
+    except Exception:  # offline or rate-limited: fall back to the documented estimate
+        spread = 0.0116
+    financing = effective_borrow_rate(risk_free_rate, spread)["effective_rate"]
+    kelly = kelly_optimal_leverage(returns, asset="QQQ", financing_cost=financing)
+    geometric = float((1 + returns["QQQ"]).prod() ** (252 / len(returns)) - 1)
     mu_scenarios = {
-        "Trailing sample (this backtest)": kelly["mu"],
+        "Trailing sample (this backtest)": geometric,
         **optimization_cfg.get("mu_scenarios", {}),
     }
-    sensitivity = kelly_sensitivity(kelly["sigma2"], mu_scenarios)
+    sensitivity = kelly_sensitivity(
+        kelly["sigma2"], mu_scenarios, financing_cost=financing, risk_aversion=2.0
+    )
     sensitivity["this_backtest_qld_weight"] = TARGET_WEIGHT_QLD
-    sensitivity["gap_vs_half_kelly"] = (
-        TARGET_WEIGHT_QLD - sensitivity["half_kelly_qld_weight"]
+    sensitivity["gap_vs_risk_adjusted"] = (
+        TARGET_WEIGHT_QLD - sensitivity["risk_adjusted_qld_weight"]
     )
     return sensitivity
 
@@ -207,26 +221,30 @@ def _write_readme(
     display_sensitivity["full_kelly_leverage"] = display_sensitivity["full_kelly_leverage"].map(
         lambda x: f"{x:.2f}x"
     )
-    display_sensitivity["half_kelly_leverage"] = display_sensitivity["half_kelly_leverage"].map(
-        lambda x: f"{x:.2f}x"
-    )
+    display_sensitivity["risk_adjusted_leverage"] = display_sensitivity[
+        "risk_adjusted_leverage"
+    ].map(lambda x: f"{x:.2f}x")
+    display_sensitivity["arithmetic_mu"] = display_sensitivity["arithmetic_mu"].map(_pct)
     display_sensitivity["full_kelly_qld_weight"] = display_sensitivity[
         "full_kelly_qld_weight"
     ].map(lambda x: f"{x:.0%}")
-    display_sensitivity["half_kelly_qld_weight"] = display_sensitivity[
-        "half_kelly_qld_weight"
+    display_sensitivity["risk_adjusted_qld_weight"] = display_sensitivity[
+        "risk_adjusted_qld_weight"
     ].map(lambda x: f"{x:.0%}")
-    display_sensitivity["gap_vs_half_kelly"] = display_sensitivity["gap_vs_half_kelly"].map(
+    display_sensitivity["gap_vs_risk_adjusted"] = display_sensitivity["gap_vs_risk_adjusted"].map(
         lambda x: f"{x * 100:+.0f}pp"
     )
-    display_sensitivity = display_sensitivity.drop(columns=["this_backtest_qld_weight"]).rename(
+    display_sensitivity = display_sensitivity.drop(
+        columns=["this_backtest_qld_weight", "excess_over_financing"]
+    ).rename(
         columns={
-            "assumed_mu": "Assumed μ",
+            "assumed_mu": "Assumed μ (geometric)",
+            "arithmetic_mu": "μ (arithmetic)",
             "full_kelly_leverage": "Full-Kelly leverage",
-            "half_kelly_leverage": "Half-Kelly leverage",
+            "risk_adjusted_leverage": "Leverage at γ=2",
             "full_kelly_qld_weight": "Full-Kelly QLD weight",
-            "half_kelly_qld_weight": "Half-Kelly QLD weight",
-            "gap_vs_half_kelly": "30% QLD vs. half-Kelly",
+            "risk_adjusted_qld_weight": "QLD weight at γ=2",
+            "gap_vs_risk_adjusted": "30% QLD vs. γ=2",
         }
     )
 

@@ -16,6 +16,76 @@ def _pct(value: float) -> str:
     return "N/A" if pd.isna(value) else f"{value:.1%}"
 
 
+def _extra_sections(extras: dict[str, object] | None) -> list[str]:
+    """Render the cost, stress and reconstruction tables when they are available."""
+    if not extras:
+        return []
+    lines: list[str] = []
+
+    costs = extras.get("costs")
+    if costs:
+        lines += [
+            "## What QLD charges to lend",
+            "",
+            "QLD's daily objective is exactly 2x the index, so the shortfall of its realised "
+            "return against twice QQQ's identifies its embedded cost. Netting out QQQ's own "
+            "expense ratio (which QLD does not pay) and a contemporaneous 3-month bill leaves "
+            "the spread its swap counterparties charged. The fee premium below is a closed "
+            "form, `ER_QLD - 2*ER_QQQ`, and is invariant to the blend weight: it is the extra "
+            "cost per dollar borrowed of borrowing through the blend rather than on margin.",
+            "",
+            "| Component | Rate |", "|---|---:|",
+            f"| Estimated swap spread over bills | {costs['swap_spread']:.2%} |",
+            f"| Current benchmark (3-month bill) | {costs['benchmark_rate']:.2%} |",
+            f"| Fund fee premium (`ER_QLD - 2*ER_QQQ`) | {costs['fee_premium']:.2%} |",
+            f"| **All-in effective borrowing rate** | **{costs['effective_rate']:.2%}** |",
+            "",
+            "Compare that last figure directly against a broker's quoted margin rate: below it, "
+            "margin is the cheaper way to reach the same exposure; above it, the blend is, and "
+            "the blend additionally cannot be margin-called.",
+            "",
+        ]
+        window = extras.get("cost_windows")
+        if window is not None and not window.empty:
+            lines += [
+                "The spread is not constant -- it reflects funding conditions at the time, and "
+                "widens under stress:",
+                "",
+                window.to_markdown(floatfmt=".4f"),
+                "",
+            ]
+
+    stress = extras.get("stress")
+    if stress is not None and not stress.empty:
+        lines += [
+            "## Drawdown by episode and weight",
+            "",
+            "The binding constraint on a leveraged position is not its average outcome but "
+            "whether the worst realised path would have ended it. Recovering from a drawdown "
+            "of `d` requires a gain of `d/(1-d)`, so these differences are not linear in pain.",
+            "",
+            stress.drop(columns=[c for c in ("start", "end") if c in stress.columns])
+            .to_markdown(floatfmt=".3f"),
+            "",
+        ]
+
+    calibration = extras.get("calibration_report")
+    if calibration is not None and not calibration.empty:
+        lines += [
+            "## Reconstruction fit over the live overlap",
+            "",
+            "Pre-2006 returns are simulated from the Nasdaq-100 and a contemporaneous short "
+            "rate. Mean returns match by construction because the two free parameters are "
+            "calibrated on this overlap; the informative columns are the correlation and "
+            "tracking error, which say whether the reconstruction follows the same path, and "
+            "the drawdown comparison, which is what the stress table depends on.",
+            "",
+            calibration.to_markdown(floatfmt=".4f"),
+            "",
+        ]
+    return lines
+
+
 def save_figures(
     returns: pd.DataFrame,
     grid: pd.DataFrame,
@@ -100,25 +170,36 @@ def write_summary(
     frequency_table: pd.DataFrame,
     sensitivity: pd.DataFrame,
     config: dict,
+    extras: dict[str, object] | None = None,
 ) -> None:
     oos = performance_metrics(walk_returns, config["optimization"]["annual_risk_free_rate"])
+    walk_objective = config["optimization"].get("walk_forward_objective", "log_growth")
+    boot_objective = config["optimization"].get("bootstrap_objective", "log_growth")
     lines = [
         "# QQQ + QLD Empirical Results",
         "",
         f"> Data window: {returns.index.min().date()} through {returns.index.max().date()};",
         f"> {config['portfolio']['rebalance']} rebalancing; one-way turnover cost: "
         f"{config['portfolio']['transaction_cost_bps']:.1f} bps.",
-        "> The sample covers QLD's full common live history. The pre- and post-2022 data "
-        "segments are validated over their overlap and linked at the splice date.",
+        (extras or {}).get("window_note", "> The sample covers QLD's live history."),
         "",
         "## Bottom line",
         "",
-        "The historical evidence does not support a universally optimal QQQ/QLD mix. Both funds "
-        "track the same index, so combining them primarily selects a daily exposure between "
-        "approximately 1x and 2x rather than adding diversification.",
-        "Maximizing in-sample CAGR drives the allocation to 100% QLD, while maximizing Sharpe or "
-        "Calmar drives it to 100% QQQ. Intermediate weights become meaningful when the investor "
-        "specifies a volatility target or drawdown constraint.",
+        "Both funds track the same index, so a QQQ/QLD blend selects a daily exposure between "
+        "roughly 1x and 2x rather than adding diversification. The blend is therefore a "
+        "*borrowing* decision, and it turns on two numbers: the rate QLD charges to lend, and "
+        "the return assumed on what is bought with it.",
+        "",
+        "Ratio objectives cannot answer it. Sharpe, Sortino and Calmar are scale-invariant in "
+        "leverage -- levering one asset scales excess mean and standard deviation together -- so "
+        "their argmax over a leverage grid is the lowest-leverage point by construction, "
+        "whatever the data says. This report selects on expected log growth and on a CRRA "
+        "certainty equivalent instead; the ratio rows are kept only for continuity.",
+        "",
+        "Growth-optimal leverage is the spread between expected return and financing cost "
+        "divided by variance. Financing is a large share of that spread at current rates, and "
+        "the variance term is materially larger once the sample includes the 2000-2002 unwind, "
+        "so both inputs move the answer more than the choice of weight granularity does.",
         "",
         "## The optimal allocation depends on the objective",
         "",
@@ -128,8 +209,13 @@ def write_summary(
     ]
     labels = {
         "max_cagr": "Maximum in-sample CAGR",
-        "max_sharpe": "Maximum in-sample Sharpe",
-        "max_calmar": "Maximum in-sample Calmar",
+        "max_log_growth": "Maximum log growth (full Kelly, gamma=1)",
+        "max_certainty_equivalent": (
+            "Maximum certainty equivalent (gamma="
+            f"{config['optimization'].get('risk_aversion', 1.0):g})"
+        ),
+        "max_sharpe": "Maximum in-sample Sharpe (scale-invariant: cannot select leverage)",
+        "max_calmar": "Maximum in-sample Calmar (scale-invariant: cannot select leverage)",
         "target_volatility": (
             f"Closest to {config['optimization']['target_volatility']:.0%} volatility"
         ),
@@ -148,6 +234,16 @@ def write_summary(
             f"{_pct(row['cagr'])} | {_pct(row['volatility'])} | "
             f"{_pct(row['max_drawdown'])} | {row['sharpe']:.2f} |"
         )
+    limit = config["optimization"]["max_drawdown_limit"]
+    if grid["max_drawdown"].max() < limit:
+        lines += [
+            "",
+            f"The drawdown constraint of {limit:.0%} is **infeasible on this sample**: the "
+            f"shallowest drawdown available at any weight is {grid['max_drawdown'].max():.1%}, "
+            "at 0% QLD. A constraint that only became satisfiable when the 2000-2002 unwind was "
+            "outside the window was never a property of the strategy -- it was a property of the "
+            "window. Lower the limit or accept that no admissible allocation meets it.",
+        ]
     lines += [
         "",
         "† Target exposure equals realized daily exposure only under daily rebalancing; see "
@@ -162,11 +258,13 @@ def write_summary(
         f"The expanding-window walk-forward strategy produced an out-of-sample CAGR of "
         f"**{_pct(oos['cagr'])}**, a Sharpe ratio of **{oos['sharpe']:.2f}**, and a maximum "
         f"drawdown of **{_pct(oos['max_drawdown'])}**.",
-        "For each test year, the highest-Sharpe weight is selected using only information that "
-        "was previously available, making this result more realistic than a full-sample optimum.",
+        f"For each test year the weight maximising `{walk_objective}` is selected using only "
+        "information available at the time, so no future return chooses a past weight. Read the "
+        "drawdown column before the return column: a growth-optimal rule is free to select "
+        "leverage that no investor would have held through.",
         "",
-        f"Across the moving-block bootstrap samples, the median highest-Sharpe QLD weight is "
-        f"**{q_med:.0%}**, with a 5th–95th percentile range of "
+        f"Across the moving-block bootstrap samples, the median `{boot_objective}`-optimal QLD "
+        f"weight is **{q_med:.0%}**, with a 5th–95th percentile range of "
         f"**{q_low:.0%}–{q_high:.0%}**. A wider interval indicates that the exact optimal "
         "percentage is less stable.",
         "",
@@ -178,9 +276,11 @@ def write_summary(
         f"**{kelly['full_kelly']:.2f}x**, with a half-Kelly reference of "
         f"**{kelly['half_kelly']:.2f}x**. QLD is fixed at 2.00x. Clipped to the QQQ/QLD blend's "
         f"achievable 1x–2x range, full-Kelly implies **{kelly_weight:.0%}** QLD.",
-        "This is a point estimate from `mu / sigma^2`, ignores financing spread and fund fees, "
-        "and is highly sensitive to the sample period — treat it as a rough compass heading, "
-        "not a target to hit precisely. See `docs/methodology.md` section 6.",
+        f"This is `(mu - c) / (gamma * sigma^2)` evaluated at an estimated all-in financing cost "
+        f"of **{kelly['financing_cost']:.2%}**, which leaves a spread of only "
+        f"**{kelly['excess_mu']:.2%}** over that cost to lever. It remains a point estimate from "
+        "one sample, and the trailing `mu` in it is a description of the past rather than a "
+        "forecast — see the sensitivity table below and `docs/methodology.md` section 6.",
         "",
         "### A blend is not the same as a fixed-leverage position",
         "",
@@ -219,22 +319,27 @@ def write_summary(
         "",
         "### Sensitivity to the assumed forward return (μ)",
         "",
-        "Kelly leverage is linear in μ but only quadratically penalized by σ² "
-        "-- and μ is far less reliable to estimate from trailing data than σ² is "
-        "(see `docs/methodology.md` section 6.2). The table below holds this sample's "
-        f"σ² (**{_pct(kelly['sigma2'] ** 0.5)}** volatility) fixed and recomputes the "
-        "implied leverage/weight under alternative forward-looking μ assumptions, editable "
-        "in `config/default.yaml` under `optimization.mu_scenarios`:",
+        "Growth-optimal leverage is `(mu - c) / (gamma * sigma^2)`, so it is driven by the "
+        "*spread* of expected return over the financing cost `c`, not by the expected return "
+        "itself. At the estimated all-in rate that spread is a difference between two "
+        "similar-sized numbers, which is why the recommendation swings so far across "
+        "assumptions that all look reasonable. Assumed returns below are **geometric**, the "
+        "convention capital-market assumptions publish; the arithmetic column adds "
+        f"`0.5*sigma^2` = {_pct(0.5 * kelly['sigma2'])}, which Kelly is defined on. This "
+        f"sample's volatility (**{_pct(kelly['sigma2'] ** 0.5)}**) is held fixed across rows "
+        "because it is far better estimated than mu (see `docs/methodology.md` section 6.2); "
+        "scenarios are editable in `config/default.yaml`:",
         "",
-        "| Scenario | Assumed μ | Full-Kelly leverage | Half-Kelly leverage | "
-        "Full-Kelly QLD weight | Half-Kelly QLD weight |",
-        "|---|---:|---:|---:|---:|---:|",
+        f"| Scenario | Assumed μ (geometric) | μ (arithmetic) | Spread over financing | "
+        f"Full Kelly | γ={config['optimization'].get('risk_aversion', 1.0):g} | "
+        f"γ={config['optimization'].get('risk_aversion', 1.0):g} QLD weight |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for scenario, row in sensitivity.iterrows():
         lines.append(
-            f"| {scenario} | {_pct(row['assumed_mu'])} | {row['full_kelly_leverage']:.2f}x | "
-            f"{row['half_kelly_leverage']:.2f}x | {row['full_kelly_qld_weight']:.0%} | "
-            f"{row['half_kelly_qld_weight']:.0%} |"
+            f"| {scenario} | {_pct(row['assumed_mu'])} | {_pct(row['arithmetic_mu'])} | "
+            f"{_pct(row['excess_over_financing'])} | {row['full_kelly_leverage']:.2f}x | "
+            f"{row['risk_adjusted_leverage']:.2f}x | {row['risk_adjusted_qld_weight']:.0%} |"
         )
     lines += [
         "",
@@ -253,6 +358,7 @@ def write_summary(
         "The table reports estimates for this historical window and these assumptions. It is not "
         "a forecast, a guarantee, or personalized investment advice.",
         "",
+        *_extra_sections(extras),
         "## Charts",
         "",
         "![Weight landscape](../assets/weight_landscape.png)",

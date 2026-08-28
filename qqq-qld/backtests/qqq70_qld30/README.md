@@ -4,7 +4,7 @@ This directory contains the dedicated, reproducible backtest for the author's st
 
 ## Assumptions
 
-- Full common history: 2006-06-20 through 2026-07-13 (5,046 daily returns)
+- Full common history: 2006-06-20 through 2026-08-27 (5,079 daily returns)
 - Rebalancing: `ME` (month-end)
 - One-way turnover cost: 2.0 bps
 - Dividends and fund expenses are reflected in the adjusted price series where available
@@ -12,13 +12,13 @@ This directory contains the dedicated, reproducible backtest for the author's st
 
 ## Full-period result
 
-A $10,000 initial investment grew to approximately **$367,960**. The strategy returned **19.7% CAGR** with **28.5% annualized volatility** and a **-64.8% maximum drawdown**.
+A $10,000 initial investment grew to approximately **$373,124**. The strategy returned **19.7% CAGR** with **28.5% annualized volatility** and a **-64.8% maximum drawdown**.
 
 | strategy          | cagr   | volatility   |   sharpe |   sortino | max_drawdown   |   calmar | terminal_multiple   |
 |:------------------|:-------|:-------------|---------:|----------:|:---------------|---------:|:--------------------|
-| 70% QQQ / 30% QLD | 19.7%  | 28.5%        |     0.78 |      0.98 | -64.8%         |     0.3  | 36.8x               |
-| 100% QQQ          | 16.7%  | 22.1%        |     0.81 |      1.08 | -53.4%         |     0.31 | 21.9x               |
-| 100% QLD          | 25.4%  | 44.0%        |     0.74 |      0.82 | -83.1%         |     0.31 | 93.5x               |
+| 70% QQQ / 30% QLD | 19.7%  | 28.5%        |     0.77 |      0.98 | -64.8%         |     0.3  | 37.3x               |
+| 100% QQQ          | 16.6%  | 22.1%        |     0.81 |      1.07 | -53.4%         |     0.31 | 22.2x               |
+| 100% QLD          | 25.3%  | 44.0%        |     0.73 |      0.82 | -83.1%         |     0.3  | 94.8x               |
 
 ## Calendar-year breakdown
 
@@ -56,12 +56,13 @@ Of the **-1.3%** total CAGR gap at this backtest's actual `ME` cadence, **-1.2%*
 
 The full-period result above (**19.7% CAGR**) describes this specific historical window; it is not a forecast. Kelly-optimal leverage (`L* = mu / sigma^2`) is linear in the assumed forward return `mu` but only quadratically penalized by variance -- and `mu` is far less reliable to estimate from trailing data than variance is. The table below holds this sample's volatility fixed and recomputes the Kelly-implied leverage and QLD weight under alternative forward-`mu` assumptions (editable in `config/default.yaml` under `optimization.mu_scenarios`; see `docs/methodology.md` section 6.2 and the main [`results/summary.md`](../../results/summary.md)):
 
-| scenario                                                                      | Assumed μ   | Full-Kelly leverage   | Half-Kelly leverage   | Full-Kelly QLD weight   | Half-Kelly QLD weight   | 30% QLD vs. half-Kelly   |
-|:------------------------------------------------------------------------------|:------------|:----------------------|:----------------------|:------------------------|:------------------------|:-------------------------|
-| Trailing sample (this backtest)                                               | 17.9%       | 3.66x                 | 1.83x                 | 100%                    | 83%                     | -53pp                    |
-| Conservative (valuation-anchored ~10y CMA, e.g. Vanguard/Research Affiliates) | 6.0%        | 1.23x                 | 0.62x                 | 23%                     | 0%                      | +30pp                    |
-| Bear case (GMO-style multiple reversion)                                      | -4.0%       | -0.82x                | -0.41x                | 0%                      | 0%                      | +30pp                    |
-| Bull case (AI upside exceeds current consensus)                               | 12.0%       | 2.46x                 | 1.23x                 | 100%                    | 23%                     | +7pp                     |
+| scenario                                   | Assumed μ (geometric)   | μ (arithmetic)   | Full-Kelly leverage   | Leverage at γ=2   | Full-Kelly QLD weight   | QLD weight at γ=2   | 30% QLD vs. γ=2   |
+|:-------------------------------------------|:------------------------|:-----------------|:----------------------|:------------------|:------------------------|:--------------------|:------------------|
+| Trailing sample (this backtest)            | 16.6%                   | 19.1%            | 3.56x                 | 1.78x             | 100%                    | 78%                 | -48pp             |
+| Optimistic (AI upside beyond consensus)    | 12.0%                   | 14.4%            | 2.61x                 | 1.31x             | 100%                    | 31%                 | -1pp              |
+| Neutral (historical equity premium)        | 9.0%                    | 11.4%            | 2.00x                 | 1.00x             | 100%                    | 0%                  | +30pp             |
+| Conservative (valuation-anchored ~10y CMA) | 6.0%                    | 8.4%             | 1.38x                 | 0.69x             | 38%                     | 0%                  | +30pp             |
+| Bear (multiple reversion)                  | 3.0%                    | 5.4%             | 0.76x                 | 0.38x             | 0%                      | 0%                  | +30pp             |
 
 Under the trailing sample's own historical return, Kelly leverage would justify more than this backtest's 30% QLD weight; under the more conservative, valuation-anchored forward-return assumption it does not. Treat 30% QLD as one point on that spectrum, not as a conclusion this backtest can supply on its own.
 
