@@ -28,6 +28,7 @@ from .optimize import (
     stationary_block_bootstrap_weights,
     walk_forward,
 )
+from .recommend import breakeven_table, optimal_leverage
 from .report import save_figures, write_summary
 
 
@@ -195,6 +196,18 @@ def run(
         risk_aversion=risk_aversion,
     )
 
+    rec_cfg = cfg.get("recommendation", {})
+    recommendation = optimal_leverage(
+        kelly["sigma2"],
+        costs["effective_rate"],
+        mu_geometric=rec_cfg.get("mu_geometric", 0.09),
+        risk_aversion=rec_cfg.get("risk_aversion", 2.0),
+        min_leverage=rec_cfg.get("min_leverage", 1.0),
+        max_leverage=rec_cfg.get("max_leverage", 2.0),
+    )
+    extras["recommendation"] = recommendation
+    extras["breakeven"] = breakeven_table(kelly["sigma2"], costs["effective_rate"])
+
     results_dir = root / report_cfg["results_dir"]
     assets_dir = root / report_cfg["assets_dir"]
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +215,7 @@ def run(
     walk_table.to_csv(results_dir / "walk_forward.csv", index=False)
     bootstrap.to_csv(results_dir / "bootstrap_weights.csv", index=False)
     cost_windows.to_csv(results_dir / "financing_by_period.csv")
+    extras["breakeven"].to_csv(results_dir / "leverage_breakeven.csv")
     extras["stress"].to_csv(results_dir / "stress_episodes.csv")
     save_figures(
         returns,

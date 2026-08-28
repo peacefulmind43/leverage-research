@@ -14,6 +14,34 @@ contains the 1987 crash and the 2000-2002 unwind rather than beginning after the
 Full output lives in [`results/summary.md`](results/summary.md); the math and assumptions are in
 [`docs/methodology.md`](docs/methodology.md).
 
+## The number
+
+**1.00x — that is, 0% QLD.** Not because leverage is disreputable, but because at an all-in
+borrowing cost of 5.41% and a crisis-inclusive volatility of 25.67%, the spread available to lever
+is too thin to pay for the variance it buys. The unconstrained optimum is **0.52x**: under these
+assumptions an investor free to hold cash would hold *less* than a full unlevered position, so the
+recommendation is a boundary, not a preference for a small amount of leverage.
+
+That figure is `(mu - c) / (gamma * sigma^2)` at a forward geometric return of 9%, CRRA risk
+aversion of 2, and the measured cost and variance above. Two of those four inputs are measured;
+two are a stated view, set in `config/default.yaml` and computed in `src/qqq_qld/recommend.py`.
+
+Inverting the formula is more useful than arguing about the assumption, so the report also states
+what each leverage level requires you to believe about forward returns:
+
+| Leverage | QLD weight | Required return (γ=1) | (γ=1.5) | (γ=2) |
+|---|---:|---:|---:|---:|
+| 1.00x | 0% | 8.71% | 12.00% | 15.30% |
+| 1.15x | 15% | 9.70% | 13.49% | 17.27% |
+| 1.30x | 30% | 10.68% | 14.97% | 19.25% |
+| 1.50x | 50% | 12.00% | 16.95% | 21.89% |
+| 2.00x | 100% | 15.30% | 21.89% | 28.48% |
+
+This sample realised 15.4% geometric over forty years, in the best-performing major index selected
+with hindsight. At half-Kelly, even 1.15x requires believing forward returns will exceed that.
+Meaningful leverage here is not a moderate position — it is a bet that the next forty years
+repeat the last forty, taken at a financing cost the last forty years mostly did not charge.
+
 ## Key findings
 
 - **A leverage decision cannot be made with a ratio objective, and an earlier version of this

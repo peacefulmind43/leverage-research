@@ -67,6 +67,17 @@ optimization:
     "Conservative (valuation-anchored ~10y CMA)": 0.06
     "Bear (multiple reversion)": 0.03
 
+# This repository's own recommendation. Unlike everything above, `mu_geometric`
+# and `risk_aversion` are a stated view rather than a measurement -- see
+# src/qqq_qld/recommend.py. Change them and the headline number changes with
+# them, which is the point. `mu_geometric` is an annualised compound return,
+# well below the 15.4% this sample realised and above broad-market CMAs.
+recommendation:
+  mu_geometric: 0.09
+  risk_aversion: 2.0
+  min_leverage: 1.0
+  max_leverage: 2.0
+
 report:
   results_dir: "results"
   assets_dir: "assets"

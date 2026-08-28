@@ -78,6 +78,26 @@ The practical appeal of QQQ plus QLD is that two liquid ETFs can continuously ad
 However, the funds track the same index and do not diversify across asset classes. QLD resets daily, so long-horizon results depend on path, volatility, financing, fees, and tracking error.
 The table reports estimates for this historical window and these assumptions. It is not a forecast, a guarantee, or personalized investment advice.
 
+## Recommended leverage: **1.00x** (0% QLD)
+
+`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of **9.00%** (arithmetic 12.30%), an all-in financing cost of **5.41%**, volatility of **25.67%**, and CRRA risk aversion **2**. The spread available to lever is 6.88%.
+
+This is a **boundary** solution, and that distinction matters. The unconstrained optimum is 0.52x: under these assumptions an investor free to hold cash would hold *less* than a full unlevered position in this index, so the recommendation is not "a little leverage is fine" but "the constraint that you are fully invested is already binding".
+
+Two of those four inputs are measured and two are asserted. `sigma^2` comes from the reconstructed 1985-2026 history and `c` from the funds' own returns; the forward return and the risk aversion are a view and a preference respectively, set in `config/default.yaml` under `recommendation`. Changing them changes this number, which is why the table below matters more than the number does.
+
+### What each leverage level requires you to believe
+
+Inverting the formula is the more useful direction: rather than arguing about the assumed return, each row states the forward geometric return that would make that leverage optimal. Compare them against the 15.4% this sample actually realised over forty years -- and against the fact that it realised it in the best-performing major index, chosen in hindsight.
+
+|       | QLD weight   | Required forward return (γ=1)   | Required forward return (γ=1.5)   | Required forward return (γ=2)   |
+|:------|:-------------|:--------------------------------|:----------------------------------|:--------------------------------|
+| 1.00x | 0%           | 8.71%                           | 12.00%                            | 15.30%                          |
+| 1.15x | 15%          | 9.70%                           | 13.49%                            | 17.27%                          |
+| 1.30x | 30%          | 10.68%                          | 14.97%                            | 19.25%                          |
+| 1.50x | 50%          | 12.00%                          | 16.95%                            | 21.89%                          |
+| 2.00x | 100%         | 15.30%                          | 21.89%                            | 28.48%                          |
+
 ## What QLD charges to lend
 
 QLD's daily objective is exactly 2x the index, so the shortfall of its realised return against twice QQQ's identifies its embedded cost. Netting out QQQ's own expense ratio (which QLD does not pay) and a contemporaneous 3-month bill leaves the spread its swap counterparties charged. The fee premium below is a closed form, `ER_QLD - 2*ER_QQQ`, and is invariant to the blend weight: it is the extra cost per dollar borrowed of borrowing through the blend rather than on margin.

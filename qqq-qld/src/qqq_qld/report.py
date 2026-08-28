@@ -16,11 +16,78 @@ def _pct(value: float) -> str:
     return "N/A" if pd.isna(value) else f"{value:.1%}"
 
 
+def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
+    """State the repository's own number, and what would have to be true for others."""
+    if not extras or not extras.get("recommendation"):
+        return []
+    rec = extras["recommendation"]
+    boundary = (
+        "This is a **boundary** solution, and that distinction matters. The unconstrained "
+        f"optimum is {rec['unconstrained_leverage']:.2f}x: under these assumptions an investor "
+        "free to hold cash would hold *less* than a full unlevered position in this index, so "
+        "the recommendation is not \"a little leverage is fine\" but \"the constraint that "
+        "you are fully invested is already binding\"."
+        if rec["binding"]
+        else "This is an interior optimum: the assumptions genuinely select this exposure "
+        "rather than being clipped to the edge of what a long-only blend can reach."
+    )
+    lines = [
+        "## Recommended leverage: "
+        f"**{rec['recommended_leverage']:.2f}x** ({rec['recommended_qld_weight']:.0%} QLD)",
+        "",
+        f"`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of "
+        f"**{rec['mu_geometric']:.2%}** (arithmetic {rec['mu_arithmetic']:.2%}), an all-in "
+        f"financing cost of **{rec['financing_cost']:.2%}**, volatility of "
+        f"**{rec['volatility']:.2%}**, and CRRA risk aversion **{rec['risk_aversion']:g}**. "
+        f"The spread available to lever is {rec['excess_over_financing']:.2%}.",
+        "",
+        boundary,
+        "",
+        "Two of those four inputs are measured and two are asserted. `sigma^2` comes from the "
+        "reconstructed 1985-2026 history and `c` from the funds' own returns; the forward "
+        "return and the risk aversion are a view and a preference respectively, set in "
+        "`config/default.yaml` under `recommendation`. Changing them changes this number, "
+        "which is why the table below matters more than the number does.",
+        "",
+    ]
+    breakeven = extras.get("breakeven")
+    if breakeven is not None and not breakeven.empty:
+        display = breakeven.copy()
+        display.index = [f"{value:.2f}x" for value in display.index]
+        display["qld_weight"] = display["qld_weight"].map(lambda v: f"{v:.0%}")
+        for column in display.columns:
+            if column != "qld_weight":
+                display[column] = display[column].map(lambda v: f"{v:.2%}")
+        display = display.rename(
+            columns={
+                "qld_weight": "QLD weight",
+                **{
+                    c: f"Required forward return (γ={c.rsplit('_', 1)[1]})"
+                    for c in breakeven.columns
+                    if c.startswith("required_mu")
+                },
+            }
+        )
+        lines += [
+            "### What each leverage level requires you to believe",
+            "",
+            "Inverting the formula is the more useful direction: rather than arguing about the "
+            "assumed return, each row states the forward geometric return that would make that "
+            "leverage optimal. Compare them against the "
+            "15.4% this sample actually realised over forty years -- and against the fact that "
+            "it realised it in the best-performing major index, chosen in hindsight.",
+            "",
+            display.to_markdown(),
+            "",
+        ]
+    return lines
+
+
 def _extra_sections(extras: dict[str, object] | None) -> list[str]:
     """Render the cost, stress and reconstruction tables when they are available."""
     if not extras:
         return []
-    lines: list[str] = []
+    lines: list[str] = list(_recommendation_section(extras))
 
     costs = extras.get("costs")
     if costs:
