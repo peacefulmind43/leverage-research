@@ -14,15 +14,30 @@ evaluated at :data:`HOUSE_VIEW`, then clipped to the exposure a long-only
 QQQ/QLD portfolio can actually reach. Its inputs, in descending order of how
 well they are known:
 
-``sigma2`` -- measured, and the most trustworthy input. Taken from the
-reconstructed 1985-2026 history rather than QLD's live window, because a
-variance estimate that excludes 2000-2002 understates the term that penalises
-leverage. This single choice moves the answer by about 0.7x.
+``sigma2`` -- measured, but the choice of *window* is a judgement. The full
+reconstructed 1985-2026 sample gives 25.67%, and that figure is carried almost
+entirely by 1995-2002, which realised 38.9%; every other era in the sample sits
+between 18.8% and 22.6%, and the post-2003 index has run 22.3% through the GFC,
+COVID and 2022. Using 25.67% as a forward constant assumes a bubble-era regime
+recurs at the same frequency in a structurally different, mega-cap-dominated
+index. The default splits the difference. Excluding 2000-2002 entirely remains
+the larger error in the other direction.
 
 ``financing_cost`` -- measured, from the funds' own returns (see
-:mod:`qqq_qld.costs`), plus a current benchmark rate. Knowable today, but it
-is a *spot* rate: a multi-decade holder pays the average future short rate,
-not this one.
+:mod:`qqq_qld.costs`), plus a benchmark rate. Note this should be the *average
+future* short rate over the holding period, not today's spot: the 41-year mean
+of the 3-month bill is 3.22% against 3.70% spot, and using spot for a
+multi-decade decision quietly costs about 0.07x of leverage.
+
+**A warning about how these are chosen.** Each input above has a defensible
+conservative value and a defensible central one. Taking the conservative end of
+all of them at once does not produce a conservative answer -- it produces an
+answer at the corner of the plausible region, and misrepresents it as the
+centre. An earlier version of this module did exactly that, stacking
+full-sample volatility, a spot financing rate and a low return assumption, and
+reported 1.00x when the defensible range ran from 1.04x to 1.92x.
+:func:`sensitivity_box` exists so the corner is always visible next to the
+point estimate.
 
 ``mu_geometric`` -- assumed, and by far the weakest input. The trailing figure
 is 15.4% geometric over forty years, which is the realised return of the
@@ -69,8 +84,10 @@ import pandas as pd
 #: by a reader with a different view; the point of the module is that changing
 #: them changes the number in a traceable way.
 HOUSE_VIEW: dict[str, float] = {
-    "mu_geometric": 0.09,
+    "mu_geometric": 0.095,
     "risk_aversion": 1.0,
+    "volatility": 0.235,
+    "benchmark_rate": 0.033,
 }
 
 #: A long-only QQQ/QLD portfolio can only reach exposures in this range.
@@ -163,10 +180,34 @@ def breakeven_table(
     return pd.DataFrame(rows).set_index("leverage")
 
 
+def _rescaled_log_returns(
+    returns: pd.Series,
+    mu_geometric: float | None,
+    volatility: float | None,
+) -> np.ndarray:
+    """Log returns retargeted to a forward mean and/or volatility.
+
+    Separates the realised *shape* of returns -- skew, kurtosis, volatility
+    clustering, which is what the sample is genuinely informative about -- from
+    its realised *level and scale*, which are a hindsight-selected sample
+    statistic and a regime-dependent one respectively. Standardising and
+    rescaling preserves every standardised higher moment, so the fat tails
+    survive the substitution.
+    """
+    log_returns = np.log1p(returns.dropna().to_numpy())
+    if volatility is not None:
+        centred = log_returns - log_returns.mean()
+        log_returns = centred / centred.std(ddof=1) * (volatility / np.sqrt(252))
+    if mu_geometric is not None:
+        log_returns = log_returns - log_returns.mean() + np.log1p(mu_geometric) / 252
+    return log_returns
+
+
 def empirical_optimal_leverage(
     returns: pd.Series,
     financing_cost: float,
     mu_geometric: float | None = None,
+    volatility: float | None = None,
     grid: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Growth-optimal leverage measured on the realised path, not approximated.
@@ -188,10 +229,7 @@ def empirical_optimal_leverage(
     The correction is modest at low leverage and grows with it, which is the
     expected sign: tails matter more the more they are multiplied.
     """
-    clean = returns.dropna()
-    log_returns = np.log1p(clean.to_numpy())
-    if mu_geometric is not None:
-        log_returns = log_returns - log_returns.mean() + np.log1p(mu_geometric) / 252
+    log_returns = _rescaled_log_returns(returns, mu_geometric, volatility)
     daily_cost = financing_cost / 252
     simple = np.expm1(log_returns)
     if grid is None:
@@ -214,6 +252,7 @@ def horizon_optimal_leverage(
     returns: pd.Series,
     financing_cost: float,
     mu_geometric: float | None = None,
+    volatility: float | None = None,
     years: int = 30,
     samples: int = 2000,
     block_days: int = 63,
@@ -232,11 +271,7 @@ def horizon_optimal_leverage(
     makes leverage look better than it is. The median is what a single investor
     living one path should care about, and it is the statistic Kelly maximises.
     """
-    clean = returns.dropna().to_numpy()
-    log_returns = np.log1p(clean)
-    if mu_geometric is not None:
-        log_returns = log_returns - log_returns.mean() + np.log1p(mu_geometric) / 252
-    simple = np.expm1(log_returns)
+    simple = np.expm1(_rescaled_log_returns(returns, mu_geometric, volatility))
 
     rng = np.random.default_rng(seed)
     horizon = years * 252
@@ -272,4 +307,111 @@ def horizon_optimal_leverage(
                 "prob_beats_unlevered": float((wealth > baseline).mean()),
             }
         )
-    return pd.DataFrame(rows).set_index("leverage")
+    table = pd.DataFrame(rows).set_index("leverage")
+    table.attrs["years"] = years
+    return table
+
+
+def sensitivity_box(
+    mu_geometric: tuple[float, ...] = (0.09, 0.10, 0.12),
+    volatility: tuple[float, ...] = (0.223, 0.235, 0.2567),
+    financing_cost: tuple[float, ...] = (0.0493, 0.0541),
+    risk_aversion: float = 1.0,
+) -> pd.DataFrame:
+    """Growth-optimal leverage across the whole plausible input region.
+
+    Published next to the point estimate on purpose. A single number invites
+    the reader to argue about it; this shows that the recommendation moves from
+    roughly 1x to roughly 2x inside a set of assumptions that are all
+    defensible, which locates the real disagreement in the inputs rather than
+    in the method.
+
+    It is also the guard against stacking conservatism: the minimum cell is a
+    corner, not a cautious central estimate, and reporting a corner as if it
+    were the centre is a specific error this module has made before.
+    """
+    rows = []
+    for sigma in volatility:
+        sigma2 = sigma**2
+        for cost in financing_cost:
+            for mu in mu_geometric:
+                rows.append(
+                    {
+                        "volatility": sigma,
+                        "financing_cost": cost,
+                        "mu_geometric": mu,
+                        "leverage": (mu + 0.5 * sigma2 - cost) / (risk_aversion * sigma2),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def flatness(horizon_table: pd.DataFrame, baseline: float = 1.0) -> pd.DataFrame:
+    """What leverage actually buys, in annualised median terms, against 1x.
+
+    The most decision-relevant fact about a Kelly curve is that it is flat near
+    its maximum, and a leverage figure quoted on its own hides that. Moving from
+    1x to the optimum can raise median terminal wealth by an amount that
+    annualises to almost nothing while materially thinning the left tail -- in
+    which case the point estimate is technically right and practically
+    uninteresting.
+
+    ``median_cagr_gain`` is the annualised difference in median terminal wealth
+    against ``baseline``; ``p5_ratio`` is what happens to the 5th percentile
+    over the same comparison.
+    """
+    if baseline not in horizon_table.index:
+        raise ValueError(f"baseline {baseline} not in the horizon table index")
+    years = horizon_table.attrs.get("years")
+    if years is None:
+        raise ValueError("horizon_table must carry an attrs['years'] annualisation basis")
+    base = horizon_table.loc[baseline]
+    out = pd.DataFrame(index=horizon_table.index)
+    out["median_multiple"] = horizon_table["median_multiple"]
+    out["median_cagr_gain"] = (
+        horizon_table["median_multiple"] / base["median_multiple"]
+    ) ** (1.0 / years) - 1.0
+    out["p5_multiple"] = horizon_table["p5_multiple"]
+    out["p5_ratio"] = horizon_table["p5_multiple"] / base["p5_multiple"]
+    return out
+
+
+def horizon_stability(
+    returns: pd.Series,
+    financing_cost: float,
+    mu_geometric: float | None = None,
+    volatility: float | None = None,
+    seeds: tuple[int, ...] = (0, 1, 2, 3, 4, 5),
+    **kwargs,
+) -> dict[str, float]:
+    """Sampling noise in the bootstrap's optimal leverage, across seeds.
+
+    The bootstrap is the most realistic of the three estimators and the least
+    precise, and those facts are easy to confuse. Its argmax moves by a few
+    hundredths from one resampling seed to the next, so it cannot support a
+    two-decimal headline no matter how many decimals it prints. This measures
+    that spread explicitly, so the figure is quoted as the interval it is.
+
+    The deterministic full-path estimator, :func:`empirical_optimal_leverage`,
+    is the one that can carry a point estimate: it uses the entire realised
+    sequence rather than resampling from it.
+    """
+    picks = []
+    for seed in seeds:
+        table = horizon_optimal_leverage(
+            returns,
+            financing_cost,
+            mu_geometric=mu_geometric,
+            volatility=volatility,
+            seed=seed,
+            **kwargs,
+        )
+        picks.append(float(table["median_multiple"].idxmax()))
+    values = np.asarray(picks)
+    return {
+        "median": float(np.median(values)),
+        "minimum": float(values.min()),
+        "maximum": float(values.max()),
+        "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
+        "seeds": len(values),
+    }

@@ -16,52 +16,66 @@ Full output lives in [`results/summary.md`](results/summary.md); the math and as
 
 ## The number
 
-**1.00x — that is, 0% QLD.** Not from risk aversion: this is full Kelly, `gamma = 1`, the
-objective that maximises wealth and nothing else. At an all-in borrowing cost of 5.41% and a
-crisis-inclusive volatility of 25.67%, the spread available to lever is simply too thin to pay for
-the variance it buys.
-
-Kelly is the right objective for a money-only question because its claim is a theorem rather than
-a preference: a log-wealth maximiser almost surely ends up richer than any essentially different
-strategy, and Kelly also maximises median terminal wealth. True risk *neutrality* is `gamma = 0`,
-which prescribes unbounded leverage and certain ruin — so "only cares about money" cannot mean
-maximising expected wealth; it has to mean maximising its growth rate.
-
-Three estimators, in increasing order of realism, agree:
+**1.23x — about 23% QLD / 77% QQQ.** Full Kelly, `gamma = 1`: the objective that maximises wealth
+and nothing else, since Kelly's dominance is a theorem rather than a preference. (True risk
+*neutrality* is `gamma = 0`, which prescribes unbounded leverage and certain ruin, so "only cares
+about money" has to mean maximising the growth rate, not expected wealth.)
 
 | Estimator | What it adds | Leverage |
 |---|---|---:|
-| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.04x |
-| Realised path | real fat tails (excess kurtosis ~8), path dependence | 0.99x |
-| 30-year block bootstrap | finite horizon, median terminal wealth | 1.00x |
+| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.31x |
+| **Realised path** (headline) | fat tails, path dependence; deterministic | **1.23x** |
+| 30-year block bootstrap | finite horizon, median terminal wealth | 1.20–1.27x |
 
-Raising `gamma` to 2 does not change the headline, but it changes its character: the unconstrained
-optimum falls to 0.52x and 1.00x becomes a *boundary*. At `gamma = 1` it is an interior optimum —
-a stronger result, and the one reported here.
+The headline is the deterministic estimator by design. The closed form sits high because its
+lognormal assumption understates what excess kurtosis near 8 costs a levered position, and the
+bootstrap's argmax moves about 0.02 between resampling seeds, so neither can carry two decimals.
 
-Inverting the formula is more useful than arguing about the assumption, so the report also states
-what each leverage level requires you to believe about forward returns:
+Inputs: forward geometric return 9.5%, volatility 23.5%, all-in financing 5.01%. Volatility is
+*not* the full-sample 25.67% — that figure is carried almost entirely by 1995-2002, which realised
+38.9%, while every other era in the sample runs 18.8-22.6% and the post-2003 index has done 22.3%
+through the GFC, COVID and 2022. Financing is built on the long-run short rate rather than today's
+spot, because a multi-decade holder pays the average future rate.
 
-| Leverage | QLD weight | Required return (γ=1) | (γ=1.5) | (γ=2) |
+### But leverage buys much less here than it looks like it should
+
+This is the part worth internalising, and it is why "just hold QQQ" is not a silly answer:
+
+| Leverage | Median wealth (30y) | vs 1x, annualised | 5th percentile | vs 1x |
 |---|---:|---:|---:|---:|
-| 1.00x | 0% | 8.71% | 12.00% | 15.30% |
-| 1.15x | 15% | 9.70% | 13.49% | 17.27% |
-| 1.30x | 30% | 10.68% | 14.97% | 19.25% |
-| 1.50x | 50% | 12.00% | 16.95% | 21.89% |
-| 2.00x | 100% | 15.30% | 21.89% | 28.48% |
+| 1.00x | 15.7x | — | 1.81x | — |
+| 1.15x | 16.4x | +0.11%/yr | 1.36x | ×0.75 |
+| 1.23x | ~16.5x | +0.12%/yr | ~1.15x | ×0.64 |
+| 1.30x | 16.5x | +0.12%/yr | 0.99x | ×0.55 |
+| 2.00x | 10.3x | −1.51%/yr | 0.12x | ×0.07 |
 
-This sample realised 15.4% geometric over forty years, in the best-performing major index selected
-with hindsight. Read the γ=1 column: **2.00x is growth-optimal if and only if forward returns
-match that trailing figure**, and 1.30x needs 10.68%. So the recommendation is not really a claim
-about leverage — it is a claim that forward Nasdaq-100 returns are nearer 9% than 15%, taken at a
-financing cost the last forty years mostly did not charge. Disagree with that and the number
-moves: μ of 12% gives 1.35x over a 30-year horizon, μ of 15.4% gives 1.95x. The repository
-computes it either way; `results/horizon_wealth.csv` has the wealth distributions.
+Moving from 1x to the growth optimum raises median terminal wealth by **about 0.12% per year** —
+inside the noise of the return assumption that produced it — while the 5th percentile falls by a
+third. The Kelly curve is flat at its peak and the left tail is not. That asymmetry is structural,
+following from the curvature of the growth function rather than from any attitude to risk, and it
+argues for erring below a leverage estimate rather than above it.
 
-One asymmetry is worth noting because it is structural rather than psychological: near the
-optimum, median terminal wealth is nearly flat while the 5th percentile falls away quickly. That
-follows from the curvature of the growth function, and it argues for erring below a leverage
-estimate rather than above it.
+### Where the disagreement actually lives
+
+Nothing above is robust to the forward return, and everything above is robust to the method:
+
+| Leverage | Required forward return (γ=1) |
+|---|---:|
+| 1.00x | 7.77% |
+| 1.15x | 8.60% |
+| 1.30x | 9.43% |
+| 1.50x | 10.53% |
+| 2.00x | 13.29% |
+
+So the recommendation is not really a claim about leverage. It is a claim that forward
+Nasdaq-100 returns are nearer 9.5% than 15%. Believe 12% and the answer is 1.77x; believe the
+trailing 15.4% and it is 2.38x, i.e. the whole admissible range and then some. `sensitivity_box()` reports the whole plausible region — **1.04x to
+1.92x** — and that range, not the point estimate, is the honest output.
+
+One methodological warning, learned the hard way in this repository's own history: each input has a
+defensible conservative value and a defensible central one, and taking the conservative end of all
+of them at once does not produce a conservative answer. It produces the corner of the plausible
+region while looking like the centre. An earlier revision did exactly that and reported 1.00x.
 
 ## Key findings
 

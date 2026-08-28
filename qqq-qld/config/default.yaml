@@ -73,7 +73,15 @@ optimization:
 # them, which is the point. `mu_geometric` is an annualised compound return,
 # well below the 15.4% this sample realised and above broad-market CMAs.
 recommendation:
-  mu_geometric: 0.09
+  mu_geometric: 0.095
+  # Forward volatility, overriding the full-sample 25.67%. That figure is
+  # carried almost entirely by 1995-2002 (38.9%); every other era in the sample
+  # runs 18.8-22.6%, and the post-2003 index has done 22.3% through the GFC,
+  # COVID and 2022. This splits the difference. Set to null to use the sample's.
+  volatility: 0.235
+  # Average *future* short rate over the holding period, not today's spot. The
+  # 41-year mean of the 3-month bill is 3.22%; spot is 3.70%.
+  benchmark_rate: 0.033
   # 1.0 is log utility (full Kelly), the correct default for "maximise money":
   # Kelly's almost-sure dominance is a theorem, not a preference. Note gamma=0
   # is true risk neutrality and prescribes unbounded leverage and certain ruin,

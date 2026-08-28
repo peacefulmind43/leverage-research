@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -31,8 +32,11 @@ from .optimize import (
 from .recommend import (
     breakeven_table,
     empirical_optimal_leverage,
+    flatness,
     horizon_optimal_leverage,
+    horizon_stability,
     optimal_leverage,
+    sensitivity_box,
 )
 from .report import save_figures, write_summary
 
@@ -202,9 +206,21 @@ def run(
     )
 
     rec_cfg = cfg.get("recommendation", {})
+    # Forward inputs, which may deliberately differ from the sample's own: the
+    # full-sample volatility is dominated by 1995-2002, and a multi-decade
+    # holder pays the average future short rate rather than today's spot.
+    forward_volatility = rec_cfg.get("volatility") or float(np.sqrt(kelly["sigma2"]))
+    forward_sigma2 = forward_volatility**2
+    forward_cost = (
+        effective_borrow_rate(rec_cfg["benchmark_rate"], swap_spread, **expense_kwargs)[
+            "effective_rate"
+        ]
+        if rec_cfg.get("benchmark_rate") is not None
+        else costs["effective_rate"]
+    )
     recommendation = optimal_leverage(
-        kelly["sigma2"],
-        costs["effective_rate"],
+        forward_sigma2,
+        forward_cost,
         mu_geometric=rec_cfg.get("mu_geometric", 0.09),
         risk_aversion=rec_cfg.get("risk_aversion", 2.0),
         min_leverage=rec_cfg.get("min_leverage", 1.0),
@@ -217,20 +233,37 @@ def run(
     # between them is the check that the headline number is not an artefact of
     # the lognormal assumption.
     recommendation["empirical"] = empirical_optimal_leverage(
-        returns["QQQ"], costs["effective_rate"], rec_cfg.get("mu_geometric", 0.09)
+        returns["QQQ"],
+        forward_cost,
+        rec_cfg.get("mu_geometric", 0.095),
+        volatility=forward_volatility,
     )["empirical_leverage"]
     horizon = horizon_optimal_leverage(
         returns["QQQ"],
-        costs["effective_rate"],
-        rec_cfg.get("mu_geometric", 0.09),
+        forward_cost,
+        rec_cfg.get("mu_geometric", 0.095),
+        volatility=forward_volatility,
         years=rec_cfg.get("horizon_years", 30),
         samples=rec_cfg.get("horizon_samples", 2000),
     )
     recommendation["horizon_years"] = rec_cfg.get("horizon_years", 30)
-    recommendation["horizon"] = float(horizon["median_multiple"].idxmax())
+    # The bootstrap's argmax carries sampling noise of a few hundredths, so it
+    # is reported as the interval it is; the deterministic full-path estimator
+    # supplies the point estimate.
+    recommendation["horizon"] = horizon_stability(
+        returns["QQQ"],
+        forward_cost,
+        rec_cfg.get("mu_geometric", 0.095),
+        volatility=forward_volatility,
+        years=rec_cfg.get("horizon_years", 30),
+        samples=rec_cfg.get("horizon_samples", 2000),
+        grid=np.arange(1.0, 1.81, 0.01),
+    )
     extras["recommendation"] = recommendation
     extras["horizon_table"] = horizon
-    extras["breakeven"] = breakeven_table(kelly["sigma2"], costs["effective_rate"])
+    extras["flatness"] = flatness(horizon)
+    extras["sensitivity_box"] = sensitivity_box()
+    extras["breakeven"] = breakeven_table(forward_sigma2, forward_cost)
 
     results_dir = root / report_cfg["results_dir"]
     assets_dir = root / report_cfg["assets_dir"]

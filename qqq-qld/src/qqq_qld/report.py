@@ -31,7 +31,11 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
         else "This is an interior optimum: the assumptions genuinely select this exposure "
         "rather than being clipped to the edge of what a long-only blend can reach."
     )
-    headline = rec.get("horizon", rec["recommended_leverage"])
+    # The deterministic full-path estimator is the only one of the three that
+    # can carry two decimals: the closed form is biased by its lognormal
+    # assumption, and the bootstrap's argmax moves with the resampling seed.
+    headline = rec.get("empirical", rec["recommended_leverage"])
+    horizon = rec.get("horizon") or {}
     lines = [
         f"## Recommended leverage: **{headline:.2f}x** ({headline - 1:.0%} QLD)",
         "",
@@ -42,10 +46,22 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
         "|---|---|---:|",
         f"| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | "
         f"{rec['unconstrained_leverage']:.2f}x |",
-        f"| Realised path | real fat tails (excess kurtosis ~8), path dependence | "
-        f"{rec.get('empirical', float('nan')):.2f}x |",
+        f"| **Realised path** (headline) | real fat tails (excess kurtosis ~8), path "
+        f"dependence; deterministic | **{headline:.2f}x** |",
         f"| {rec.get('horizon_years', 30)}-year block bootstrap | finite horizon, median "
-        f"terminal wealth | {headline:.2f}x |",
+        f"terminal wealth | "
+        + (
+            f"{horizon['minimum']:.2f}-{horizon['maximum']:.2f}x |"
+            if horizon
+            else f"{rec['recommended_leverage']:.2f}x |"
+        ),
+        "",
+        "The bootstrap is the most realistic estimator and the least precise: its argmax moves "
+        f"by about {horizon.get('std', 0):.2f} between resampling seeds, so it is quoted as an "
+        "interval rather than a number. The headline comes from the full realised sequence, "
+        "which resamples nothing and so has no sampling noise -- that is what makes two "
+        "decimals meaningful here. The closed form sits above both because its lognormal "
+        "assumption understates what fat tails cost a levered position.",
         "",
         f"`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of "
         f"**{rec['mu_geometric']:.2%}** (arithmetic {rec['mu_arithmetic']:.2%}), an all-in "

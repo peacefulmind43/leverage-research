@@ -78,17 +78,19 @@ The practical appeal of QQQ plus QLD is that two liquid ETFs can continuously ad
 However, the funds track the same index and do not diversify across asset classes. QLD resets daily, so long-horizon results depend on path, volatility, financing, fees, and tracking error.
 The table reports estimates for this historical window and these assumptions. It is not a forecast, a guarantee, or personalized investment advice.
 
-## Recommended leverage: **1.00x** (0% QLD)
+## Recommended leverage: **1.23x** (23% QLD)
 
 Three estimators of the same quantity, in increasing order of realism. They agree, which is the check that the headline is not an artefact of the lognormal assumption:
 
 | Estimator | What it adds | Leverage |
 |---|---|---:|
-| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.04x |
-| Realised path | real fat tails (excess kurtosis ~8), path dependence | 0.99x |
-| 30-year block bootstrap | finite horizon, median terminal wealth | 1.00x |
+| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.31x |
+| **Realised path** (headline) | real fat tails (excess kurtosis ~8), path dependence; deterministic | **1.23x** |
+| 30-year block bootstrap | finite horizon, median terminal wealth | 1.20-1.27x |
 
-`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of **9.00%** (arithmetic 12.30%), an all-in financing cost of **5.41%**, volatility of **25.67%**, and CRRA risk aversion **1**. The spread available to lever is 6.88%.
+The bootstrap is the most realistic estimator and the least precise: its argmax moves by about 0.02 between resampling seeds, so it is quoted as an interval rather than a number. The headline comes from the full realised sequence, which resamples nothing and so has no sampling noise -- that is what makes two decimals meaningful here. The closed form sits above both because its lognormal assumption understates what fat tails cost a levered position.
+
+`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of **9.50%** (arithmetic 12.26%), an all-in financing cost of **5.01%**, volatility of **23.50%**, and CRRA risk aversion **1**. The spread available to lever is 7.25%.
 
 This is an interior optimum: the assumptions genuinely select this exposure rather than being clipped to the edge of what a long-only blend can reach.
 
@@ -102,11 +104,11 @@ Inverting the formula is the more useful direction: rather than arguing about th
 
 |       | QLD weight   | Required forward return (γ=1)   | Required forward return (γ=1.5)   | Required forward return (γ=2)   |
 |:------|:-------------|:--------------------------------|:----------------------------------|:--------------------------------|
-| 1.00x | 0%           | 8.71%                           | 12.00%                            | 15.30%                          |
-| 1.15x | 15%          | 9.70%                           | 13.49%                            | 17.27%                          |
-| 1.30x | 30%          | 10.68%                          | 14.97%                            | 19.25%                          |
-| 1.50x | 50%          | 12.00%                          | 16.95%                            | 21.89%                          |
-| 2.00x | 100%         | 15.30%                          | 21.89%                            | 28.48%                          |
+| 1.00x | 0%           | 7.77%                           | 10.54%                            | 13.30%                          |
+| 1.15x | 15%          | 8.60%                           | 11.78%                            | 14.95%                          |
+| 1.30x | 30%          | 9.43%                           | 13.02%                            | 16.61%                          |
+| 1.50x | 50%          | 10.54%                          | 14.68%                            | 18.82%                          |
+| 2.00x | 100%         | 13.30%                          | 18.82%                            | 24.34%                          |
 
 ### Terminal wealth over 30 years
 
@@ -114,11 +116,11 @@ Block-bootstrapped holding periods, so volatility clustering survives resampling
 
 |       |   median_multiple |   mean_multiple |   p5_multiple |   p95_multiple |   prob_beats_unlevered |
 |:------|------------------:|----------------:|--------------:|---------------:|-----------------------:|
-| 1.00x |             13.68 |           31.06 |          1.29 |         112.14 |                   0.00 |
-| 1.15x |             13.41 |           39.85 |          0.89 |         154.17 |                   0.46 |
-| 1.30x |             12.53 |           50.75 |          0.58 |         202.43 |                   0.41 |
-| 1.50x |             10.52 |           69.15 |          0.30 |         275.53 |                   0.36 |
-| 2.00x |              5.17 |          137.30 |          0.04 |         415.55 |                   0.24 |
+| 1.00x |             15.65 |           31.16 |          1.81 |         107.43 |                   0.00 |
+| 1.15x |             16.39 |           40.91 |          1.36 |         153.01 |                   0.58 |
+| 1.30x |             16.45 |           53.42 |          0.99 |         210.24 |                   0.55 |
+| 1.50x |             15.48 |           75.51 |          0.61 |         304.09 |                   0.50 |
+| 2.00x |             10.34 |          168.39 |          0.12 |         573.39 |                   0.37 |
 
 Note the shape near the optimum: the median is nearly flat while the 5th percentile deteriorates quickly. That asymmetry is a reason to err below a leverage estimate rather than above it, and it follows from the curvature of the growth function rather than from any attitude to risk.
 

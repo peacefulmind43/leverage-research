@@ -9,15 +9,21 @@ from qqq_qld.recommend import (
     breakeven_table,
     empirical_optimal_leverage,
     horizon_optimal_leverage,
+    horizon_stability,
     optimal_leverage,
     required_return,
+    sensitivity_box,
 )
 
 # The measured half of the recommendation, from the reconstructed 1985-2026
 # sample and the funds' own returns. Pinned here so a change in either shows up
 # as a failing test rather than a quietly different headline number.
-SIGMA2 = 0.065901
-FINANCING = 0.0541
+# Forward inputs, matching config/default.yaml's `recommendation` block: a
+# volatility between the full-sample 25.67% and the post-2003 22.3%, and a
+# financing cost built on the long-run rather than the spot short rate.
+SIGMA2 = 0.235**2
+FINANCING = 0.0501
+SAMPLE_SIGMA2 = 0.065901
 
 
 def test_house_view_recommendation_is_pinned():
@@ -28,7 +34,8 @@ def test_house_view_recommendation_is_pinned():
     """
     result = optimal_leverage(SIGMA2, FINANCING)
     assert result["risk_aversion"] == 1.0
-    assert round(result["unconstrained_leverage"], 2) == 1.04
+    assert result["mu_geometric"] == 0.095
+    assert round(result["unconstrained_leverage"], 2) == 1.31
     assert result["binding"] is False
 
 
@@ -43,9 +50,8 @@ def test_gamma_is_not_what_drives_the_answer():
     """
     kelly = optimal_leverage(SIGMA2, FINANCING, risk_aversion=1.0)
     averse = optimal_leverage(SIGMA2, FINANCING, risk_aversion=2.0)
-    assert round(kelly["recommended_leverage"], 1) == 1.0
-    assert round(averse["recommended_leverage"], 1) == 1.0
-    assert kelly["binding"] is False and averse["binding"] is True
+    assert kelly["unconstrained_leverage"] > 1.0 and kelly["binding"] is False
+    assert averse["unconstrained_leverage"] < 1.0 and averse["binding"] is True
 
 
 def test_boundary_and_interior_solutions_are_distinguished():
@@ -90,9 +96,9 @@ def test_full_leverage_requires_the_trailing_return_to_repeat():
     selected with hindsight.
     """
     trailing_geometric = 0.154
-    required = required_return(2.0, SIGMA2, FINANCING, HOUSE_VIEW["risk_aversion"])
+    required = required_return(2.0, SAMPLE_SIGMA2, 0.0541, HOUSE_VIEW["risk_aversion"])
     assert np.isclose(required, trailing_geometric, atol=0.005)
-    assert required_return(1.0, SIGMA2, FINANCING, 1.0) < 0.09
+    assert required_return(1.0, SIGMA2, FINANCING, 1.0) < HOUSE_VIEW["mu_geometric"]
 
 
 def test_higher_financing_cost_reduces_recommended_leverage():
@@ -104,6 +110,62 @@ def test_higher_financing_cost_reduces_recommended_leverage():
     assert np.isclose(gap, 0.04 / SIGMA2)
 
 
+def test_stacking_conservative_inputs_lands_on_a_corner_not_a_centre():
+    """The error this module made once, asserted so it cannot recur silently.
+
+    Each conservative input is individually defensible. Taken together they
+    produce the minimum of the plausible region, which is not a cautious
+    central estimate but an extreme one.
+    """
+    box = sensitivity_box()
+    corner = optimal_leverage(
+        0.2567**2, 0.0541, mu_geometric=0.09, risk_aversion=1.0, min_leverage=0.0
+    )["unconstrained_leverage"]
+    assert np.isclose(corner, box["leverage"].min(), atol=0.01)
+    assert box["leverage"].median() > corner + 0.25
+
+
+def test_rescaling_preserves_shape_while_retargeting_scale():
+    """Substituting a forward volatility must not launder away the fat tails.
+
+    Rescaling standardises *log* returns, whose standardised moments are
+    preserved exactly. The reported kurtosis is measured on simple returns, and
+    ``expm1`` is non-linear, so it shifts by a few percent -- close is the
+    correct expectation here, not equal. What matters is that the series stays
+    strongly leptokurtic rather than being flattened toward Gaussian.
+    """
+    series = _fat_tailed_series()
+    original = empirical_optimal_leverage(series, FINANCING, mu_geometric=0.095)
+    rescaled = empirical_optimal_leverage(
+        series, FINANCING, mu_geometric=0.095, volatility=0.235
+    )
+    assert np.isclose(rescaled["excess_kurtosis"], original["excess_kurtosis"], rtol=0.10)
+    assert rescaled["excess_kurtosis"] > 3.0
+    assert np.isclose(rescaled["mu_geometric"], 0.095, atol=1e-6)
+
+
+def test_bootstrap_cannot_support_two_decimals():
+    """Why the headline comes from the deterministic estimator.
+
+    The block bootstrap's argmax moves with the resampling seed, so quoting it
+    to two decimals would be false precision. Reporting it as an interval, and
+    taking the point estimate from the full realised path, is the fix.
+    """
+    series = _fat_tailed_series(days=4000)
+    spread = horizon_stability(
+        series,
+        FINANCING,
+        mu_geometric=0.095,
+        volatility=0.235,
+        seeds=(0, 1, 2, 3),
+        years=15,
+        samples=250,
+        grid=np.arange(1.0, 1.61, 0.01),
+    )
+    assert spread["maximum"] > spread["minimum"]
+    assert spread["seeds"] == 4
+
+
 def test_excluding_the_crisis_window_would_raise_the_recommendation():
     """Why the reconstruction is not optional.
 
@@ -111,7 +173,7 @@ def test_excluding_the_crisis_window_would_raise_the_recommendation():
     penalised by variance, using it inflates the answer.
     """
     live_sigma2 = 0.2207**2
-    full = optimal_leverage(SIGMA2, FINANCING, mu_geometric=0.12, risk_aversion=1.0)
+    full = optimal_leverage(SAMPLE_SIGMA2, FINANCING, mu_geometric=0.12, risk_aversion=1.0)
     live = optimal_leverage(live_sigma2, FINANCING, mu_geometric=0.12, risk_aversion=1.0)
     assert live["unconstrained_leverage"] > full["unconstrained_leverage"] + 0.3
 
