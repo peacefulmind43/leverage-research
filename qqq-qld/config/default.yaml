@@ -74,9 +74,17 @@ optimization:
 # well below the 15.4% this sample realised and above broad-market CMAs.
 recommendation:
   mu_geometric: 0.09
-  risk_aversion: 2.0
+  # 1.0 is log utility (full Kelly), the correct default for "maximise money":
+  # Kelly's almost-sure dominance is a theorem, not a preference. Note gamma=0
+  # is true risk neutrality and prescribes unbounded leverage and certain ruin,
+  # so the money-only objective cannot be "maximise expected wealth" -- it has
+  # to be "maximise the growth rate", which is gamma=1. Raise it only to encode
+  # an unwillingness to hold the path. See src/qqq_qld/recommend.py.
+  risk_aversion: 1.0
   min_leverage: 1.0
   max_leverage: 2.0
+  horizon_years: 30
+  horizon_samples: 2000
 
 report:
   results_dir: "results"

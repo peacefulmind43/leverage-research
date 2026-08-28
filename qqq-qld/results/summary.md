@@ -80,9 +80,19 @@ The table reports estimates for this historical window and these assumptions. It
 
 ## Recommended leverage: **1.00x** (0% QLD)
 
-`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of **9.00%** (arithmetic 12.30%), an all-in financing cost of **5.41%**, volatility of **25.67%**, and CRRA risk aversion **2**. The spread available to lever is 6.88%.
+Three estimators of the same quantity, in increasing order of realism. They agree, which is the check that the headline is not an artefact of the lognormal assumption:
 
-This is a **boundary** solution, and that distinction matters. The unconstrained optimum is 0.52x: under these assumptions an investor free to hold cash would hold *less* than a full unlevered position in this index, so the recommendation is not "a little leverage is fine" but "the constraint that you are fully invested is already binding".
+| Estimator | What it adds | Leverage |
+|---|---|---:|
+| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.04x |
+| Realised path | real fat tails (excess kurtosis ~8), path dependence | 0.99x |
+| 30-year block bootstrap | finite horizon, median terminal wealth | 1.00x |
+
+`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of **9.00%** (arithmetic 12.30%), an all-in financing cost of **5.41%**, volatility of **25.67%**, and CRRA risk aversion **1**. The spread available to lever is 6.88%.
+
+This is an interior optimum: the assumptions genuinely select this exposure rather than being clipped to the edge of what a long-only blend can reach.
+
+Kelly's optimality is a theorem about which strategy wins, not a risk preference, so `gamma = 1` is the right setting for a purely wealth-maximising objective. Note that true risk *neutrality* is `gamma = 0`, which prescribes unbounded leverage and certain ruin -- so "only cares about money" cannot mean maximising expected wealth; it has to mean maximising its growth rate. Estimation error in `mu` is *not* a further reason to raise gamma: expected log growth is linear in mu, so uncertainty leaves the optimum at `E[mu]`. Being wrong about `E[mu]` is what moves the answer.
 
 Two of those four inputs are measured and two are asserted. `sigma^2` comes from the reconstructed 1985-2026 history and `c` from the funds' own returns; the forward return and the risk aversion are a view and a preference respectively, set in `config/default.yaml` under `recommendation`. Changing them changes this number, which is why the table below matters more than the number does.
 
@@ -97,6 +107,20 @@ Inverting the formula is the more useful direction: rather than arguing about th
 | 1.30x | 30%          | 10.68%                          | 14.97%                            | 19.25%                          |
 | 1.50x | 50%          | 12.00%                          | 16.95%                            | 21.89%                          |
 | 2.00x | 100%         | 15.30%                          | 21.89%                            | 28.48%                          |
+
+### Terminal wealth over 30 years
+
+Block-bootstrapped holding periods, so volatility clustering survives resampling. Read the median column, not the mean: mean terminal wealth rises with leverage without limit because a thin right tail carries it, which is precisely the statistic that makes leverage look better than it is. `prob_beats_unlevered` compares against 1x on the *same* draw.
+
+|       |   median_multiple |   mean_multiple |   p5_multiple |   p95_multiple |   prob_beats_unlevered |
+|:------|------------------:|----------------:|--------------:|---------------:|-----------------------:|
+| 1.00x |             13.68 |           31.06 |          1.29 |         112.14 |                   0.00 |
+| 1.15x |             13.41 |           39.85 |          0.89 |         154.17 |                   0.46 |
+| 1.30x |             12.53 |           50.75 |          0.58 |         202.43 |                   0.41 |
+| 1.50x |             10.52 |           69.15 |          0.30 |         275.53 |                   0.36 |
+| 2.00x |              5.17 |          137.30 |          0.04 |         415.55 |                   0.24 |
+
+Note the shape near the optimum: the median is nearly flat while the 5th percentile deteriorates quickly. That asymmetry is a reason to err below a leverage estimate rather than above it, and it follows from the curvature of the growth function rather than from any attitude to risk.
 
 ## What QLD charges to lend
 

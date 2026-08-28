@@ -16,15 +16,28 @@ Full output lives in [`results/summary.md`](results/summary.md); the math and as
 
 ## The number
 
-**1.00x — that is, 0% QLD.** Not because leverage is disreputable, but because at an all-in
-borrowing cost of 5.41% and a crisis-inclusive volatility of 25.67%, the spread available to lever
-is too thin to pay for the variance it buys. The unconstrained optimum is **0.52x**: under these
-assumptions an investor free to hold cash would hold *less* than a full unlevered position, so the
-recommendation is a boundary, not a preference for a small amount of leverage.
+**1.00x — that is, 0% QLD.** Not from risk aversion: this is full Kelly, `gamma = 1`, the
+objective that maximises wealth and nothing else. At an all-in borrowing cost of 5.41% and a
+crisis-inclusive volatility of 25.67%, the spread available to lever is simply too thin to pay for
+the variance it buys.
 
-That figure is `(mu - c) / (gamma * sigma^2)` at a forward geometric return of 9%, CRRA risk
-aversion of 2, and the measured cost and variance above. Two of those four inputs are measured;
-two are a stated view, set in `config/default.yaml` and computed in `src/qqq_qld/recommend.py`.
+Kelly is the right objective for a money-only question because its claim is a theorem rather than
+a preference: a log-wealth maximiser almost surely ends up richer than any essentially different
+strategy, and Kelly also maximises median terminal wealth. True risk *neutrality* is `gamma = 0`,
+which prescribes unbounded leverage and certain ruin — so "only cares about money" cannot mean
+maximising expected wealth; it has to mean maximising its growth rate.
+
+Three estimators, in increasing order of realism, agree:
+
+| Estimator | What it adds | Leverage |
+|---|---|---:|
+| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | 1.04x |
+| Realised path | real fat tails (excess kurtosis ~8), path dependence | 0.99x |
+| 30-year block bootstrap | finite horizon, median terminal wealth | 1.00x |
+
+Raising `gamma` to 2 does not change the headline, but it changes its character: the unconstrained
+optimum falls to 0.52x and 1.00x becomes a *boundary*. At `gamma = 1` it is an interior optimum —
+a stronger result, and the one reported here.
 
 Inverting the formula is more useful than arguing about the assumption, so the report also states
 what each leverage level requires you to believe about forward returns:
@@ -38,9 +51,17 @@ what each leverage level requires you to believe about forward returns:
 | 2.00x | 100% | 15.30% | 21.89% | 28.48% |
 
 This sample realised 15.4% geometric over forty years, in the best-performing major index selected
-with hindsight. At half-Kelly, even 1.15x requires believing forward returns will exceed that.
-Meaningful leverage here is not a moderate position — it is a bet that the next forty years
-repeat the last forty, taken at a financing cost the last forty years mostly did not charge.
+with hindsight. Read the γ=1 column: **2.00x is growth-optimal if and only if forward returns
+match that trailing figure**, and 1.30x needs 10.68%. So the recommendation is not really a claim
+about leverage — it is a claim that forward Nasdaq-100 returns are nearer 9% than 15%, taken at a
+financing cost the last forty years mostly did not charge. Disagree with that and the number
+moves: μ of 12% gives 1.35x over a 30-year horizon, μ of 15.4% gives 1.95x. The repository
+computes it either way; `results/horizon_wealth.csv` has the wealth distributions.
+
+One asymmetry is worth noting because it is structural rather than psychological: near the
+optimum, median terminal wealth is nearly flat while the 5th percentile falls away quickly. That
+follows from the curvature of the growth function, and it argues for erring below a leverage
+estimate rather than above it.
 
 ## Key findings
 

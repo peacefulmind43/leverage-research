@@ -31,9 +31,21 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
         else "This is an interior optimum: the assumptions genuinely select this exposure "
         "rather than being clipped to the edge of what a long-only blend can reach."
     )
+    headline = rec.get("horizon", rec["recommended_leverage"])
     lines = [
-        "## Recommended leverage: "
-        f"**{rec['recommended_leverage']:.2f}x** ({rec['recommended_qld_weight']:.0%} QLD)",
+        f"## Recommended leverage: **{headline:.2f}x** ({headline - 1:.0%} QLD)",
+        "",
+        "Three estimators of the same quantity, in increasing order of realism. They agree, "
+        "which is the check that the headline is not an artefact of the lognormal assumption:",
+        "",
+        "| Estimator | What it adds | Leverage |",
+        "|---|---|---:|",
+        f"| Closed form `(mu-c)/(gamma*sigma^2)` | lognormal returns | "
+        f"{rec['unconstrained_leverage']:.2f}x |",
+        f"| Realised path | real fat tails (excess kurtosis ~8), path dependence | "
+        f"{rec.get('empirical', float('nan')):.2f}x |",
+        f"| {rec.get('horizon_years', 30)}-year block bootstrap | finite horizon, median "
+        f"terminal wealth | {headline:.2f}x |",
         "",
         f"`L* = (mu - c) / (gamma * sigma^2)` at a forward geometric return of "
         f"**{rec['mu_geometric']:.2%}** (arithmetic {rec['mu_arithmetic']:.2%}), an all-in "
@@ -42,6 +54,14 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
         f"The spread available to lever is {rec['excess_over_financing']:.2%}.",
         "",
         boundary,
+        "",
+        "Kelly's optimality is a theorem about which strategy wins, not a risk preference, so "
+        "`gamma = 1` is the right setting for a purely wealth-maximising objective. Note that "
+        "true risk *neutrality* is `gamma = 0`, which prescribes unbounded leverage and certain "
+        "ruin -- so \"only cares about money\" cannot mean maximising expected wealth; it has "
+        "to mean maximising its growth rate. Estimation error in `mu` is *not* a further reason "
+        "to raise gamma: expected log growth is linear in mu, so uncertainty leaves the optimum "
+        "at `E[mu]`. Being wrong about `E[mu]` is what moves the answer.",
         "",
         "Two of those four inputs are measured and two are asserted. `sigma^2` comes from the "
         "reconstructed 1985-2026 history and `c` from the funds' own returns; the forward "
@@ -78,6 +98,28 @@ def _recommendation_section(extras: dict[str, object] | None) -> list[str]:
             "it realised it in the best-performing major index, chosen in hindsight.",
             "",
             display.to_markdown(),
+            "",
+        ]
+    horizon = extras.get("horizon_table")
+    if horizon is not None and not horizon.empty:
+        shown = [x for x in (1.0, 1.15, 1.3, 1.5, 2.0) if x in horizon.index]
+        display = horizon.loc[shown].copy()
+        display.index = [f"{value:.2f}x" for value in display.index]
+        lines += [
+            f"### Terminal wealth over {rec.get('horizon_years', 30)} years",
+            "",
+            "Block-bootstrapped holding periods, so volatility clustering survives resampling. "
+            "Read the median column, not the mean: mean terminal wealth rises with leverage "
+            "without limit because a thin right tail carries it, which is precisely the "
+            "statistic that makes leverage look better than it is. `prob_beats_unlevered` "
+            "compares against 1x on the *same* draw.",
+            "",
+            display.to_markdown(floatfmt=".2f"),
+            "",
+            "Note the shape near the optimum: the median is nearly flat while the 5th "
+            "percentile deteriorates quickly. That asymmetry is a reason to err below a "
+            "leverage estimate rather than above it, and it follows from the curvature of the "
+            "growth function rather than from any attitude to risk.",
             "",
         ]
     return lines

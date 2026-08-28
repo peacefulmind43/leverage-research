@@ -28,7 +28,12 @@ from .optimize import (
     stationary_block_bootstrap_weights,
     walk_forward,
 )
-from .recommend import breakeven_table, optimal_leverage
+from .recommend import (
+    breakeven_table,
+    empirical_optimal_leverage,
+    horizon_optimal_leverage,
+    optimal_leverage,
+)
 from .report import save_figures, write_summary
 
 
@@ -205,7 +210,26 @@ def run(
         min_leverage=rec_cfg.get("min_leverage", 1.0),
         max_leverage=rec_cfg.get("max_leverage", 2.0),
     )
+    # Three estimators of the same quantity, in increasing realism: the closed
+    # form assumes lognormal returns; the empirical version compounds through
+    # the actual path so fat tails bite; the horizon version resamples finite
+    # holding periods because Kelly's optimality is asymptotic. Agreement
+    # between them is the check that the headline number is not an artefact of
+    # the lognormal assumption.
+    recommendation["empirical"] = empirical_optimal_leverage(
+        returns["QQQ"], costs["effective_rate"], rec_cfg.get("mu_geometric", 0.09)
+    )["empirical_leverage"]
+    horizon = horizon_optimal_leverage(
+        returns["QQQ"],
+        costs["effective_rate"],
+        rec_cfg.get("mu_geometric", 0.09),
+        years=rec_cfg.get("horizon_years", 30),
+        samples=rec_cfg.get("horizon_samples", 2000),
+    )
+    recommendation["horizon_years"] = rec_cfg.get("horizon_years", 30)
+    recommendation["horizon"] = float(horizon["median_multiple"].idxmax())
     extras["recommendation"] = recommendation
+    extras["horizon_table"] = horizon
     extras["breakeven"] = breakeven_table(kelly["sigma2"], costs["effective_rate"])
 
     results_dir = root / report_cfg["results_dir"]
@@ -216,6 +240,7 @@ def run(
     bootstrap.to_csv(results_dir / "bootstrap_weights.csv", index=False)
     cost_windows.to_csv(results_dir / "financing_by_period.csv")
     extras["breakeven"].to_csv(results_dir / "leverage_breakeven.csv")
+    horizon.to_csv(results_dir / "horizon_wealth.csv")
     extras["stress"].to_csv(results_dir / "stress_episodes.csv")
     save_figures(
         returns,
