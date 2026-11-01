@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""Run the whole study and write every table and chart into ``results/``.
+
+    python scripts/run_analysis.py [--refresh] [--paths 4000]
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from spmo_margin import backtest, bootstrap, data, kelly, margin, optimal, viz
+
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS = Path(os.environ.get("SPMO_RESULTS_DIR", str(ROOT / "results")))
+FIGURES = RESULTS / "figures"
+
+LEVERAGES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+BORROW_SPREAD = 0.0150  # IBKR Pro first tier, i.e. the retail-sized loan
+CRISES = {
+    "dot-com bust": ("2000-01-01", "2003-01-01"),
+    "global financial crisis": ("2007-10-01", "2009-04-01"),
+    "covid crash": ("2020-02-01", "2020-05-01"),
+    "2022 rate shock": ("2022-01-01", "2023-01-01"),
+}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--refresh", action="store_true", help="re-download source data")
+    ap.add_argument("--paths", type=int, default=4000, help="bootstrap paths")
+    args = ap.parse_args()
+
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    facts: dict[str, object] = {}
+
+    # ------------------------------------------------------------------ data
+    live = data.build_dataset("SPMO", refresh=args.refresh)
+
+    # Primary history: the S&P 500 Momentum Index SPMO tracks, gross total return
+    # net of SPMO's 0.13% fee. Published values only; see spmo_margin.data for why
+    # the series currently starts in 2016 and how the 1994-2016 part gets added.
+    history = data.momentum_index_history(refresh=args.refresh)
+    status = data.history_status(history)
+
+    bm_now = float(live["bm"].iloc[-1])
+    facts["benchmark_rate_now"] = bm_now
+    facts["index_history"] = status
+    facts["index_vs_spmo"] = data.tracking_vs_etf("SPMO", refresh=args.refresh)
+    facts["live_window"] = [str(live.index[0].date()), str(live.index[-1].date())]
+    facts["worst_day"] = float(live["ret"].min())
+
+    rates = pd.DataFrame(
+        margin.rate_table(bm_now), columns=["loan_usd", "blended_annual_rate"]
+    )
+    rates.to_csv(RESULTS / "ibkr_rate_table.csv", index=False)
+    facts["rate_table"] = rates.to_dict("records")
+
+    # ------------------------------------------------- historical leverage sweeps
+    live_sweep, _ = backtest.sweep(live, LEVERAGES, rebalance="monthly")
+    live_sweep.to_csv(RESULTS / "sweep_spmo_live.csv")
+
+    ext_sweep, ext_curves = backtest.sweep(history, LEVERAGES, rebalance="monthly")
+    ext_sweep.to_csv(RESULTS / "sweep_momentum_index.csv")
+
+    schedules = []
+    for schedule in ("daily", "weekly", "monthly", "quarterly", "band", "never"):
+        table, _ = backtest.sweep(history, LEVERAGES, rebalance=schedule)
+        table = table.assign(schedule=schedule).reset_index()
+        schedules.append(table)
+    schedule_table = pd.concat(schedules, ignore_index=True)
+    schedule_table.to_csv(RESULTS / "rebalance_schedules.csv", index=False)
+
+    # Both schedules in every crisis window. The two fail in different regimes and
+    # only the real episodes show it: rebalancing to target sells into a decline and
+    # so delevers, while a static loan lets leverage ratchet up as equity falls.
+    crisis_rows, facts["crises_not_in_sample"] = [], []
+    for name, (start, end) in CRISES.items():
+        window = history.loc[start:end]
+        if history.index[0] > pd.Timestamp(start):
+            facts["crises_not_in_sample"].append(name)
+            continue
+        for schedule in ("monthly", "never"):
+            table, _ = backtest.sweep(window, LEVERAGES, rebalance=schedule)
+            crisis_rows.append(
+                table.assign(
+                    episode=name,
+                    schedule=schedule,
+                    start=str(window.index[0].date()),
+                    end=str(window.index[-1].date()),
+                ).reset_index()
+            )
+    crisis_table = pd.concat(crisis_rows, ignore_index=True)
+    crisis_table.to_csv(RESULTS / "crisis_episodes.csv", index=False)
+
+    # --------------------------------------------------------------- Kelly
+    kelly_rows, growth_grids = [], {}
+    samples = {
+        f"SPMO ETF {live.index[0].year}-{live.index[-1].year}": live,
+        f"S&P 500 Momentum TR net of fee {history.index[0].year}-{history.index[-1].year}": history,
+    }
+    for label, frame in samples.items():
+        rets = frame["ret"].to_numpy()
+        gauss = kelly.gaussian_kelly(rets, borrow_rate=bm_now + BORROW_SPREAD)
+        emp = kelly.empirical_kelly(
+            rets, np.full(len(rets), bm_now), borrow_spread=BORROW_SPREAD
+        )
+        kelly_rows.append(
+            {
+                "sample": label,
+                "mu_arith": gauss["mu_arith"],
+                "sigma": gauss["sigma"],
+                "borrow_rate": gauss["borrow_rate"],
+                "kelly_gaussian": gauss["f_star"],
+                "kelly_empirical": emp["f_star"],
+                "half_kelly_empirical": optimal.half_kelly(emp["f_star"]),
+            }
+        )
+        growth_grids[label] = kelly.growth_curve(
+            rets, np.full(len(rets), bm_now), borrow_spread=BORROW_SPREAD
+        )
+    kelly_table = pd.DataFrame(kelly_rows).set_index("sample")
+    kelly_table.to_csv(RESULTS / "kelly_estimates.csv")
+
+    # ----------------------------------------------------------- bootstrap
+    boot_live = bootstrap.bootstrap_sweep(
+        live["ret"].to_numpy(), LEVERAGES, benchmark_level=bm_now, n_paths=args.paths
+    )
+    boot_live.to_csv(RESULTS / "bootstrap_spmo_live.csv")
+
+    boot_ext = bootstrap.bootstrap_sweep(
+        history["ret"].to_numpy(), LEVERAGES, benchmark_level=bm_now, n_paths=args.paths
+    )
+    boot_ext.to_csv(RESULTS / "bootstrap_momentum_index.csv")
+
+    boot_stress = bootstrap.bootstrap_sweep(
+        history["ret"].to_numpy(),
+        LEVERAGES,
+        benchmark_level=0.06,  # a 6% benchmark, i.e. 7.5% financing at retail size
+        n_paths=args.paths,
+    )
+    boot_stress.to_csv(RESULTS / "bootstrap_high_rates.csv")
+
+    # ------------------------------------------------------------- answers
+    answers = optimal.summarise_answers(
+        boot_ext,
+        kelly_estimates={
+            row["sample"]: row["kelly_empirical"] for row in kelly_rows
+        },
+    )
+    answers.to_csv(RESULTS / "optimal_leverage_answers.csv", index=False)
+
+    facts["growth_optimal"] = optimal.growth_optimal(boot_ext)
+    facts["robust_optimal_p05"] = optimal.robust_optimal(boot_ext, "cagr_p05")
+    facts["robust_optimal_p25"] = optimal.robust_optimal(boot_ext, "cagr_p25")
+    facts["drawdown_budgets"] = {
+        f"{limit:.0%}": optimal.drawdown_budget(boot_ext, limit)
+        for limit in (-0.25, -0.30, -0.35, -0.40, -0.50)
+    }
+    facts["robust_optimal_high_rates"] = optimal.robust_optimal(boot_stress, "cagr_p05")
+
+    # How much of the p05 peak is signal and how much is the bootstrap draw? The
+    # location moves with the seed, so the location is not the finding -- the decline
+    # above it is. Reporting this keeps the headline claim honest.
+    stability = []
+    for seed in (20260910, 1, 7, 99, 12345):
+        table = bootstrap.bootstrap_sweep(
+            history["ret"].to_numpy(),
+            LEVERAGES,
+            benchmark_level=bm_now,
+            n_paths=args.paths,
+            seed=seed,
+        )
+        stability.append(
+            {
+                "seed": seed,
+                "p05_optimal_leverage": optimal.robust_optimal(table, "cagr_p05"),
+                "p05_at_1x": float(table.loc[1.0, "cagr_p05"]),
+                "p05_at_1_5x": float(table.loc[1.5, "cagr_p05"]),
+                "p05_at_2x": float(table.loc[2.0, "cagr_p05"]),
+                "p05_at_3x": float(table.loc[3.0, "cagr_p05"]),
+            }
+        )
+    stability_table = pd.DataFrame(stability)
+    stability_table.to_csv(RESULTS / "bootstrap_seed_stability.csv", index=False)
+    facts["p05_optimal_range_across_seeds"] = [
+        float(stability_table["p05_optimal_leverage"].min()),
+        float(stability_table["p05_optimal_leverage"].max()),
+    ]
+
+    # ------------------------------------------------------------- horizon
+    # Explicit horizon sensitivity conditional on a stationary fitted return model.
+    # Age does not determine withdrawal horizon; parameter uncertainty need not
+    # disappear as these bootstrap paths get longer.
+    horizon_records: dict[tuple[str, float], dict[float, float]] = {}
+    for years in (10, 20, 30, 40):
+        paths = bootstrap.moving_block_paths(
+            history["ret"].to_numpy(), args.paths, int(years * 252), seed=11
+        )
+        for lev in LEVERAGES:
+            out = bootstrap.simulate_paths(paths, lev, bm_now)
+            horizon_records.setdefault(("cagr_p05", years), {})[lev] = float(
+                np.percentile(out["cagr"], 5)
+            )
+            horizon_records.setdefault(("cagr_median", years), {})[lev] = float(
+                np.median(out["cagr"])
+            )
+            horizon_records.setdefault(("median_max_drawdown", years), {})[lev] = float(
+                np.median(out["max_drawdown"])
+            )
+            horizon_records.setdefault(("prob_dd_over_70", years), {})[lev] = float(
+                (out["max_drawdown"] < -0.70).mean()
+            )
+    horizon = pd.DataFrame(horizon_records).T
+    horizon.index.names = ["statistic", "horizon_years"]
+    horizon.to_csv(RESULTS / "horizon_sensitivity.csv")
+    facts["horizon_p05_optimal"] = {
+        str(years): optimal.robust_optimal(
+            pd.DataFrame({"cagr_p05": horizon.loc[("cagr_p05", years)]}), "cagr_p05"
+        )
+        for years in (10, 20, 30, 40)
+    }
+
+    # -------------------------------------------------------------- figures
+    figures = []
+    figures += viz.plot_growth_and_downside(boot_ext, FIGURES / "growth_vs_downside.png")
+    figures += viz.plot_equity_curves(
+        history.index,
+        {lev: ext_curves[lev][1:] for lev in (1.0, 1.5, 2.0, 3.0)},
+        FIGURES / "equity_curves.png",
+        subtitle=(
+            f"S&P 500 Momentum TR net of fee, {status['start'][:4]}-{status['end'][:4]}"
+            + ("" if status["full_history"] else " (1994-2016 not yet added)")
+            + "; monthly rebalance"
+        ),
+    )
+    figures += viz.plot_kelly_curves(growth_grids, FIGURES / "kelly_growth.png")
+    figures += viz.plot_horizon_effect(horizon, FIGURES / "horizon_effect.png")
+    facts["figures"] = [os.path.relpath(p.resolve(), ROOT) for p in figures]
+
+    (RESULTS / "key_facts.json").write_text(json.dumps(facts, indent=2, default=float))
+
+    # --------------------------------------------------------------- console
+    pd.set_option("display.width", 200, "display.max_columns", 40)
+    if "note" in status:
+        print(f"\n*** {status['note']} ***")
+    print(f"\nIBKR USD benchmark (Fed Funds): {bm_now:.2%}")
+    print(f"index history {status['start']} to {status['end']} ({status['years']:.1f}y)")
+    tracking = facts["index_vs_spmo"]
+    print(
+        f"index (net of fee) vs SPMO: corr {tracking['correlation']:.3f}, "
+        f"mean gap {tracking['index_minus_etf_annual']:+.2%}/yr, "
+        f"tracking error {tracking['tracking_error_annual']:.2%}"
+    )
+    if facts["crises_not_in_sample"]:
+        print(f"crises NOT in sample: {', '.join(facts['crises_not_in_sample'])}")
+    print("\n--- bootstrap, S&P 500 Momentum Index history ---")
+    print(
+        boot_ext[
+            [
+                "cagr_p05",
+                "cagr_median",
+                "cagr_p95",
+                "median_max_drawdown",
+                "prob_dd_over_50",
+                "prob_beat_unlevered",
+            ]
+        ].round(3)
+    )
+    print("\n--- Kelly ---")
+    print(kelly_table[["mu_arith", "sigma", "kelly_gaussian", "kelly_empirical"]].round(3))
+    print("\n--- what 'optimal' means ---")
+    print(answers.round(2).to_string(index=False))
+    print("\n--- horizon: p05 CAGR by leverage ---")
+    print(horizon.loc["cagr_p05"].round(4).to_string())
+    print("\n--- horizon: P(drawdown worse than -70%) ---")
+    print(horizon.loc["prob_dd_over_70"].round(3).to_string())
+    print("\n--- 5th-percentile peak, stability across bootstrap seeds ---")
+    print(stability_table.round(4).to_string(index=False))
+    print(f"\nwrote {len(list(RESULTS.rglob('*')))} files to {RESULTS.resolve()}/")
+
+
+if __name__ == "__main__":
+    main()

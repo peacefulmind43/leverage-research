@@ -1,0 +1,252 @@
+# SPMO margin: validate the decision before sizing it
+
+> ## ⚠️ Data status: real index data, history still incomplete
+>
+> All return data is now the **published S&P 500 Momentum Index, gross total return
+> (SP500MUT)** — the index SPMO tracks — net of SPMO's 0.13% fee, plus SPMO's own
+> prices. **Nothing is synthesised.** An earlier version built a pre-2015 "history"
+> from Ken French factor loadings back to 1926; that data and every conclusion
+> drawn from it have been removed.
+>
+> S&P DJI calculates the index from **1994-09-16** (back-test before its
+> 2014-11-18 launch), but its public site serves only the last ten years.
+> **The cached series therefore starts 2016-09-01. The 1994-09-16 to 2016-08-31
+> portion will be added** (see [Adding the 1994–2016 history](#adding-the-19942016-history)).
+> Until then every result in `results/` is **preliminary**: the sample contains
+> no 2000–02 or 2008 bear market, and is biased toward leverage. Every script
+> prints this warning while the gap exists.
+
+**No live leverage target has been validated by this repository.** Earlier
+recommendations of 1.0x, 1.475x and approximately 2.0x were measured on the
+retired synthetic history, and mixed different objectives, financing assumptions
+and standards of evidence. They are
+[archived and explicitly retired](docs/historical-conclusions-2026-09-10.md).
+A conditional fitted optimum is not a selection-adjusted position recommendation.
+
+## Preliminary results on 2016–2026 real data
+
+S&P 500 Momentum TR net of fee, 2016-09-01 to 2026-09-30 (10.1 years); financing
+at the current Fed Funds level plus IBKR Pro tier spreads. **Read these as an upper
+bound, not an estimate**: a decade in which momentum returned about 20%/yr with no
+deep bear market is the most flattering sample available for leverage.
+
+| Measure | Value |
+|---|---|
+| arithmetic mean / volatility | 20.5% / 20.9% |
+| full Kelly / half Kelly (empirical) | 3.35x / 1.68x |
+| leverage maximising 5th-pct 10-year CAGR | 1.36x (1.30–1.47x across seeds) |
+| same, if expected return is 2pp lower | 1.00x |
+| CRRA gamma 1.5, 40-year horizon | 2.33x |
+| P(drawdown worse than −70%) over 40y at 1.5x / 2.0x | 9% / 51% |
+
+Two things are already visible. The answer is extremely sensitive to the
+expected return: removing 2pp a year (well inside its standard error on ten years
+of data) takes the downside-robust optimum from 1.40x to no margin
+(`scripts/overfitting_audit.py`, 3.63% benchmark). And the
+bootstrap block length moves the 5th-percentile optimum from 1.36x (5-day blocks) to 1.87x (63-day), which
+means ten years of data cannot pin it down. Both are reasons to wait for the full
+history, not to act on these figures. Sources: `results/key_facts.json`,
+`results/overfitting_audit.csv`, `results/return_haircut_sensitivity.csv`,
+`results/optimal_target.csv`.
+
+Index (net of fee) against SPMO over 2016–2026: correlation 0.97 and a mean gap of
++0.03%/yr. The tracking error of 4.9% comes almost entirely from SPMO's thin
+trading in 2016–17 and the March 2020 dislocation; since 2023 it is about 1%/yr.
+
+## Adding the 1994–2016 history
+
+1. Export daily SP500MUT levels from 1994-09-16 to today. On a Bloomberg terminal
+   (ANU library and finance labs have access): `SP500MUT Index` → `HP`, set the
+   range, export to Excel. LSEG Workspace or FactSet work too, or request it from
+   S&P DJI. It must be **gross total return in USD**, not price return (SP500MUP)
+   or net total return (SP500MUN).
+2. Save as `data/sp500_momentum_tr_full.csv` with two columns: `date,level`.
+3. Run `pytest` and the scripts again. `spmo_margin.data.load_momentum_index`
+   joins the file to the S&P download on daily returns and **refuses** if the
+   overlapping returns disagree, so a wrong series cannot slip in. The warnings
+   disappear once the series reaches back to 1994.
+
+## The owner's chosen operating rule
+
+> The evidence behind this rule was measured on the retired synthetic history and
+> is **withdrawn pending the 1994–2016 index data**; see the notice in
+> [docs/operating-rule.md](docs/operating-rule.md). The rule stays as a recorded
+> decision, not as a finding.
+
+Separately from what this repository has validated — which remains nothing — the
+owner has recorded an operating rule: **target 1.500x, rebalance back to it whenever
+leverage leaves (1.300x, 1.700x)**. It is written up with its conditions, its
+expected cost, and the specific things that would invalidate it, in
+[docs/operating-rule.md](docs/operating-rule.md), and pinned by
+`tests/test_operating_rule.py` so the document and the engine cannot drift apart.
+
+A one-page summary of the decision is in [report.html](report.html); it carries
+the same withdrawal notice. Its 1.500x argmax and 1.250x–1.725x confidence set came
+from the synthetic history. On the preliminary 2016–2026 real data,
+`scripts/confidence_set.py` puts the maximum at the 2.0x cap instead. That sample
+has no bear market in it, so it is no reason to change the rule either way.
+
+## Changes for live-use review
+
+- Training truncates raw index levels, ETF prices and financing at an explicit
+  `as_of` date **before** computing any return. SPMO trains on the S&P 500
+  Momentum Index (net of fee); peer funds train on their own prices. Tests corrupt
+  future data and require earlier selections to stay unchanged.
+- A chronological runner selects leverage using observations dated through the previous
+  December, then evaluates the next year's actual ETF returns. Equity and position
+  carry across folds; there is no annual account reset.
+- Both independent simulators support changing maintenance, explicit withdrawals,
+  opening/rebalance leverage caps and dollar borrowing caps. Rebalancing cannot
+  restore a position above the maintenance ceiling.
+- Cash-only accounts survive. Liquidation/rebalancing fees satisfy actual account
+  cash conservation. Unfundable withdrawals are recorded as **unpaid**.
+- Calculator output marks infeasible opening positions and no longer recommends
+  a target or says unlevered stocks can never wipe out. Optimiser results are
+  explicitly conditional research outputs, not rebalance instructions.
+- Standard Pro USD tiers and credit-interest NAV scaling were checked against
+  published terms on 2026-09-11. Regional surcharges are separate inputs.
+
+The scalar/vector **1e-9 agreement requirement remains mandatory**. Numerical
+agreement protects accounting; it does not validate the return model.
+
+## Run
+
+Python 3.11 or newer:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest
+python scripts/run_analysis.py
+python scripts/validate_live.py
+python scripts/stress_account.py --equity 50000 --years 10
+python scripts/position_calculator.py --equity 50000 --leverage 1.5 --maintenance 0.50
+```
+
+These are example inputs, not instructions to trade 1.5x or hold for ten years.
+
+`validate_live.py` defaults to SPMO, MTUM, PDP, QMOM and MMTM, a retrospectively
+chosen universe of survivors. It uses 2019–2026 annual test folds, at least 756
+prior training observations, a **three-year training forecast**, 128 bootstrap paths,
+a fixed `[1, 1.25, 1.5, 1.75, 2]` grid and expected log wealth. The training
+horizon is an explicit forecasting choice, not an inferred investor holding period.
+Training financing defaults to the last known DFF proxy plus standard Pro spreads;
+test financing follows the actual historical DFF proxy. Until the 1994–2016 index
+data is added, SPMO's 2019 fold has under three years of index history and is
+skipped (`results/validation/skipped_folds.csv`).
+
+Two forecast rules are tested: the fitted growth estimate and a declared
+2-percentage-point downward revision to expected asset return. The latter is a
+sensitivity, **not a calibrated overfitting correction**. Fixed 1x, 1.5x and 2x
+policies are retained as benchmarks. No winner is selected from test results
+and relabelled a live recommendation.
+
+```bash
+python scripts/validate_live.py --financing paired_historical --output results/validation-paired
+python scripts/validate_live.py --monthly-withdrawal 1000 --output results/validation-spending
+```
+
+The first alternative samples return/rate blocks jointly in training; the second
+is an explicit spending scenario, not a forecast of household expenses.
+
+The runner writes per-year selections, scores, outcomes, continuous equity curves,
+omitted folds and a manifest of settings, source/input hashes and limitations.
+`live_sizing_approved` is **false**: this runner cannot issue trading approval.
+Read [`summary.csv`](results/validation/summary.csv),
+[`folds.csv`](results/validation/folds.csv) and
+[`manifest.json`](results/validation/manifest.json) together.
+
+`stress_account.py` compares constant financing against jointly sampled return/rate
+blocks rescaled to the same average benchmark, 50%/75% stress maintenance,
+2pp/4pp lower mean returns and monthly withdrawals. Stress sizes have no asserted
+real-world probability. Read [`scenarios.csv`](results/stress/scenarios.csv) and
+[`settings.json`](results/stress/settings.json).
+
+## Account mechanics and boundaries
+
+The account holds asset value `P`, debt `D` (negative means cash) and equity
+`E = P - D`. Daily steps accrue financing, apply the low/close return scenario,
+enforce maintenance, add contributions, attempt withdrawals, then rebalance.
+Withdrawals use cash before selling assets; further debt repayment is modelled
+if collateral is insufficient. Failed requests are unpaid and unexecuted.
+`withdrawal_failures > 0` is a household funding failure even if equity remains
+positive. Ruined accounts are not resurrected by deposits. Full voluntary account
+closure is not modelled: withdrawals exhausting equity are rejected and recorded.
+After a gap through zero equity, `ruin_deficit` preserves the remaining debt and
+`terminal_net_equity` can be negative. Legacy `terminal_equity` and return metrics
+floor the active trading account at zero; they do not imply debt forgiveness.
+
+`Account.max_leverage=2` and `simulate_paths(..., max_leverage=2)` impose a supplied
+opening/rebalance cap. Low-level default `None` retains research experiments above
+2x. Existing positions can drift above an opening limit; borrowing to open a new
+position is a different action. This is not a complete Reg-T/SMA or portfolio-margin
+implementation. `max_loan` caps initial debt and rebalancing targets; interest can
+temporarily exceed that cap before rebalancing.
+
+Maintenance accepts a scalar, daily series or (vector simulator) one path per return
+path. Validation raises it from 25% to 50% when the **previous close's** asset
+drawdown exceeds 20%. This is causal scenario construction, not IBKR's house-margin
+algorithm. Liquidating to the requirement has no additional buffer and can cause
+repeated small sales in stress.
+
+`annual_drag=.003` deducts 30bp/year from asset returns as a withholding sensitivity.
+It does not model treaty eligibility, distribution dates, capital-gains taxes, FX
+effects or interest deductibility. `interest_tax_shield=0` is the default.
+
+## Evidence still missing
+
+1. **Ticker selection and survivorship.** SPMO was selected after doing well.
+   Peer comparisons cannot reconstruct all funds/rules considered before that
+   choice. DWAQ, DUDE and LETB appeared in the earlier exploratory audit, but their
+   distribution/closure data remain insufficiently verified for this validation
+   set. Their omission is a limitation, not a passing check.
+2. **The 1994–2016 index history.** Not yet in the repository (see the data
+   notice above). Even once added, the 1994–2014 part is S&P's back-test: real
+   index arithmetic on historical constituents, but under a methodology designed
+   after momentum was already known to work. Annual refits also do not propagate
+   uncertainty about expected return inside each forecast.
+3. **Untouched observations and household cashflows.** These dates have already
+   been inspected. Causally refitted walk-forward diagnostics cannot turn them into
+   pristine prospective evidence. Current data vintages can include revisions;
+   observation-date cutoffs do not model publication delays.
+   Real withdrawals, contributions and their correlation with market stress remain
+   unspecified.
+
+The question is whether additional borrowing retains an adequate net growth
+advantage after these uncertainties. Choosing a smaller number by eye, or halving
+fitted Kelly, does not answer that question statistically.
+
+## Research scripts
+
+These are conditional research on the index history, regenerated on the real data.
+Files directly under `results/` come from them; chronological results are under
+`results/validation/`.
+
+```bash
+SPMO_RESULTS_DIR=results/research python scripts/run_analysis.py
+SPMO_RESULTS_DIR=results/research python scripts/overfitting_audit.py
+SPMO_RESULTS_DIR=results/research python scripts/funding_strategies.py
+SPMO_RESULTS_DIR=results/research python scripts/optimise_target.py --horizon 40 --gamma 1
+```
+
+The audited 365/252 conversion for calendar-day financing on a 360-day basis is
+retained. Intraday dips are scenarios, not reconstructed intraday prices. A band
+is a declared policy choice, not a reliably identified optimum.
+
+## Data and primary references
+
+S&P 500 Momentum Index gross total return (SP500MUT) from S&P Dow Jones Indices'
+public index page, cached in `data/sp500_momentum_tr.csv`; adjusted ETF prices
+from Yahoo Finance via `yfinance`; DFF from FRED. Checksums pin run inputs. These
+are not reconciled custody records or historical publication vintages.
+
+- [S&P 500 Momentum Index](https://www.spglobal.com/spdji/en/indices/dividends-factors/sp-500-momentum-index/)
+- [S&P Momentum Indices methodology](https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-momentum-indices.pdf) (base dates, back-test disclosure)
+
+- [IBKR rates and tier surcharges](https://www.interactivebrokers.com/en/trading/margin-rates.php)
+- [IBKR benchmark methodology](https://brokerage.ibkr.com/en/pricing/reference-benchmark-rates-int.php)
+- [IBKR credit interest](https://www.interactivebrokers.com/en/accounts/fees/pricing-interest-rates.php)
+- [Australian surcharges when applicable](https://www.interactivebrokers.com.au/en/trading/margin-rates-au.php)
+- [FINRA margin requirements](https://www.finra.org/investors/investing/investment-accounts/brokerage-accounts)
+- [Bailey et al., Probability of Backtest Overfitting](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf)

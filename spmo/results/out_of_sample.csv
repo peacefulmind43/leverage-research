@@ -1,0 +1,2 @@
+split,train,test,chosen_out_of_sample,hindsight_best,cagr_chosen,cagr_hindsight,cagr_unlevered,drawdown_chosen,drawdown_hindsight,drawdown_unlevered,cost_of_no_hindsight,value_of_fitting
+2021,2016-2020,2021-2026,2.0,2.0,0.3427960150583451,0.3427960150583451,0.21094995716399678,-0.43910505305393277,-0.43910505305393277,-0.22805329300644195,0.0,0.13184605789434833
